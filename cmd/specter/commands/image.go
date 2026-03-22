@@ -20,11 +20,16 @@ var imageCmd = &cobra.Command{
 	Short: "Manage golden snapshots",
 }
 
+var imageBuildVersion string
+
 var imageBuildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Create a new golden snapshot",
-	Long:  "Create a temporary VM, install the toolchain, snapshot it, and clean up.",
-	RunE:  runImageBuild,
+	Long: `Create a temporary VM, install the toolchain, snapshot it, and clean up.
+
+The version is auto-incremented from the latest snapshot. Use --version to
+set an explicit version.`,
+	RunE: runImageBuild,
 }
 
 var imageListCmd = &cobra.Command{
@@ -36,6 +41,7 @@ var imageListCmd = &cobra.Command{
 func init() {
 	imageCmd.AddCommand(imageBuildCmd)
 	imageCmd.AddCommand(imageListCmd)
+	imageBuildCmd.Flags().StringVar(&imageBuildVersion, "version", "", "Explicit version (e.g., v1.0.0). Auto-increments if not set")
 }
 
 const provisionScript = `#!/bin/bash
@@ -200,8 +206,21 @@ func runImageBuild(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("%s (%s)\n", tui.SuccessStyle.Render("done"), time.Since(powerStart).Round(time.Second))
 
+	// Determine version
+	version := imageBuildVersion
+	if version == "" {
+		// Auto-detect from existing snapshots
+		existingSnap, _ := hc.FindSpecterSnapshot(ctx)
+		currentVersion := "v0.0.0"
+		if existingSnap != nil {
+			if v, ok := existingSnap.Labels["version"]; ok {
+				currentVersion = v
+			}
+		}
+		version = config.BumpVersion(currentVersion)
+	}
+
 	// Create snapshot
-	version := "v0.1.0"
 	description := fmt.Sprintf("specter-base-cx23-%s", version)
 	fmt.Printf("  Creating snapshot (%s)... ", description)
 	snapStart := time.Now()
