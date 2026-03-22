@@ -92,8 +92,10 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		location = deployLocation
 	}
 
-	if strings.HasPrefix(serverType, "cax") {
-		return fmt.Errorf("ARM servers (cax*) are not supported. The golden snapshot is x86. Use cx* or ccx* server types")
+	// Validate server type against cache
+	stCache, _ := config.LoadServerTypeCache()
+	if err := config.ValidateServerType(serverType, location, stCache); err != nil {
+		return err
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

@@ -6,8 +6,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/ghostwright/specter/internal/config"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"golang.org/x/crypto/ssh"
 )
@@ -227,6 +229,44 @@ func (c *Client) FindSpecterSnapshot(ctx context.Context) (*hcloud.Image, error)
 		}
 	}
 	return latest, nil
+}
+
+func (c *Client) ListServerTypes(ctx context.Context) ([]config.ServerTypeInfo, error) {
+	types, err := c.API.ServerType.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error listing server types: %w", err)
+	}
+
+	var result []config.ServerTypeInfo
+	for _, t := range types {
+		var locations []string
+		for _, loc := range t.Locations {
+			if loc.Location != nil {
+				locations = append(locations, loc.Location.Name)
+			}
+		}
+
+		var priceMonthly float64
+		if len(t.Pricings) > 0 {
+			if v, err := strconv.ParseFloat(t.Pricings[0].Monthly.Gross, 64); err == nil {
+				priceMonthly = v
+			}
+		}
+
+		result = append(result, config.ServerTypeInfo{
+			Name:         t.Name,
+			Description:  t.Description,
+			Cores:        t.Cores,
+			Memory:       t.Memory,
+			Disk:         t.Disk,
+			CPUType:      string(t.CPUType),
+			Architecture: string(t.Architecture),
+			Locations:    locations,
+			PriceMonthly: priceMonthly,
+		})
+	}
+
+	return result, nil
 }
 
 func SSHConnect(ip string) (*ssh.Client, error) {

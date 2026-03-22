@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/ghostwright/specter/internal/cloudflare"
 	"github.com/ghostwright/specter/internal/config"
@@ -162,6 +163,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	cfg.Hetzner.FirewallID = fw.ID
 	fmt.Println(tui.SuccessStyle.Render("done"))
+
+	// Fetch and cache server types
+	fmt.Printf("  Fetching server types... ")
+	serverTypes, err := hc.ListServerTypes(ctx)
+	if err != nil {
+		fmt.Println(tui.WarningStyle.Render("failed (will use fallback)"))
+	} else {
+		cache := &config.ServerTypeCache{
+			Types:     serverTypes,
+			FetchedAt: time.Now(),
+		}
+		if err := cache.Save(); err != nil {
+			fmt.Println(tui.WarningStyle.Render("could not cache"))
+		} else {
+			fmt.Printf("%s (%d types)\n", tui.SuccessStyle.Render("cached"), len(serverTypes))
+		}
+	}
 
 	// Check for existing snapshot
 	fmt.Printf("  Checking for golden snapshot... ")

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 
 	"github.com/ghostwright/specter/internal/config"
@@ -60,6 +59,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  No agents deployed. Run `specter deploy <name>` to get started.\n\n")
 		return nil
 	}
+
+	stCache, _ := config.LoadServerTypeCache()
 
 	httpClient := &http.Client{Timeout: 3 * time.Second}
 	agents := make([]agentInfo, 0, len(servers))
@@ -118,19 +119,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Rough cost estimate by server type
-		switch s.ServerType.Name {
-		case "cx23":
-			monthlyCost += 3.49
-		case "cx33":
-			monthlyCost += 5.99
-		case "cx43":
-			monthlyCost += 14.99
-		case "cx53":
-			monthlyCost += 29.99
-		default:
-			monthlyCost += 5.99
-		}
+		monthlyCost += config.GetMonthlyPrice(s.ServerType.Name, stCache)
 
 		agents = append(agents, info)
 	}
@@ -193,5 +182,3 @@ func formatUptime(seconds int) string {
 	hours := (seconds % 86400) / 3600
 	return fmt.Sprintf("%dd %dh", days, hours)
 }
-
-var _ = strings.TrimSpace // import used by formatting
