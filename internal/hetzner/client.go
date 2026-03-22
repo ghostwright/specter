@@ -210,6 +210,11 @@ func (c *Client) CreateSnapshot(ctx context.Context, server *hcloud.Server, desc
 		return nil, fmt.Errorf("error waiting for snapshot: %w", err)
 	}
 
+	// Re-fetch to get populated DiskSize (0 in initial response)
+	updated, _, err := c.API.Image.GetByID(ctx, result.Image.ID)
+	if err == nil && updated != nil {
+		return updated, nil
+	}
 	return result.Image, nil
 }
 
