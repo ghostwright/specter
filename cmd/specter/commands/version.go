@@ -22,8 +22,11 @@ var versionCmd = &cobra.Command{
 			fmt.Println(string(data))
 			return
 		}
-		fmt.Printf("%s v%s\n", tui.Brand, version.Version)
+		fmt.Println()
+		fmt.Println(tui.Logo())
+		fmt.Println()
+		fmt.Printf("  %s v%s\n", tui.TitleStyle.Render(tui.Brand), version.Version)
 		fmt.Printf("  Commit: %s\n", version.Commit)
-		fmt.Printf("  Built:  %s\n", version.Date)
+		fmt.Printf("  Built:  %s\n\n", version.Date)
 	},
 }

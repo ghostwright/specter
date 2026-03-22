@@ -84,6 +84,10 @@ chown -R specter:specter /home/specter/.ssh
 chmod 700 /home/specter/.ssh
 chmod 600 /home/specter/.ssh/authorized_keys
 
+echo "=== Configuring sudoers for specter user ==="
+echo "specter ALL=(ALL) NOPASSWD: /usr/bin/journalctl" > /etc/sudoers.d/specter
+chmod 440 /etc/sudoers.d/specter
+
 echo "=== Setting up Bun for specter user ==="
 cp -r /root/.bun /home/specter/.bun
 chown -R specter:specter /home/specter/.bun

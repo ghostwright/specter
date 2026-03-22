@@ -3,11 +3,14 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	Primary   = lipgloss.Color("#7B68EE")
-	Success   = lipgloss.Color("#50C878")
-	Warning   = lipgloss.Color("#FFBF00")
-	Error     = lipgloss.Color("#FF6B6B")
-	Muted     = lipgloss.Color("#666666")
+	Primary = lipgloss.Color("#F97316")
+	Accent  = lipgloss.Color("#FB923C")
+	Deep    = lipgloss.Color("#EA580C")
+	Success = lipgloss.Color("#22C55E")
+	Warning = lipgloss.Color("#EAB308")
+	Error   = lipgloss.Color("#EF4444")
+	Muted   = lipgloss.Color("#71717A")
+
 	TextWhite = lipgloss.Color("#FAFAFA")
 	TextDim   = lipgloss.Color("#999999")
 
@@ -19,6 +22,9 @@ var (
 			Bold(true).
 			Foreground(Primary).
 			PaddingLeft(1)
+
+	AccentStyle = lipgloss.NewStyle().
+			Foreground(Accent)
 
 	SuccessStyle = lipgloss.NewStyle().
 			Foreground(Success)
@@ -49,13 +55,17 @@ const (
 )
 
 func Logo() string {
-	return lipgloss.NewStyle().
-		Foreground(Primary).
-		Bold(true).
-		Render(`     ○
-    ╱│╲
-   ╱ │ ╲
-  │  │  │
-   ╲ │ ╱
-    ∿∿∿`)
+	body := lipgloss.NewStyle().Foreground(Primary).Bold(true)
+	tail := lipgloss.NewStyle().Foreground(Accent)
+	eyes := lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA")).Bold(true)
+
+	return body.Render("       .-\"\"\"-.") + "\n" +
+		body.Render("      /       \\") + "\n" +
+		body.Render("     |  ") + eyes.Render("O   O") + body.Render("  |") + "\n" +
+		body.Render("     |    ") + lipgloss.NewStyle().Foreground(Deep).Render("o") + body.Render("    |") + "\n" +
+		body.Render("     |  \\___/  |") + "\n" +
+		body.Render("      \\       /") + "\n" +
+		tail.Render("      _) _ _ (_") + "\n" +
+		tail.Render("     / /| | |\\ \\") + "\n" +
+		tail.Render("    (_/ | | | \\_)")
 }

@@ -18,8 +18,8 @@ import (
 
 var updateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update agent code",
-	Long:  "Pull latest code, reinstall dependencies, and restart the agent.",
+	Short: "Restart agent and refresh dependencies",
+	Long:  "Restart the agent service and reinstall dependencies. Code pull is available when deploying from a git repository.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runUpdate,
 }

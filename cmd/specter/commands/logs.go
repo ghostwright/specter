@@ -88,8 +88,8 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	sshExec := exec.Command("ssh",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
-		fmt.Sprintf("root@%s", agent.IP),
-		journalCmd,
+		fmt.Sprintf("specter@%s", agent.IP),
+		"sudo "+journalCmd,
 	)
 	sshExec.Stdin = os.Stdin
 	sshExec.Stdout = os.Stdout

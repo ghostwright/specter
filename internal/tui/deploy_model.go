@@ -50,19 +50,23 @@ type DeployErrMsg struct {
 
 type tickMsg time.Time
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 type DeployModel struct {
-	AgentName string
-	Role      string
-	Location  string
+	AgentName  string
+	Role       string
+	Location   string
 	ServerType string
 
-	phases    []Phase
-	current   int
-	startTime time.Time
-	done      bool
-	err       error
-	result    *DeployResult
-	quitting  bool
+	phases         []Phase
+	current        int
+	startTime      time.Time
+	phaseStartedAt time.Time
+	spinnerIndex   int
+	done           bool
+	err            error
+	result         *DeployResult
+	quitting       bool
 }
 
 func NewDeployModel(agentName, role, location, serverType string, phases []Phase) DeployModel {
@@ -78,7 +82,7 @@ func NewDeployModel(agentName, role, location, serverType string, phases []Phase
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -96,6 +100,7 @@ func (m DeployModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
+		m.spinnerIndex = (m.spinnerIndex + 1) % len(spinnerFrames)
 		return m, tickCmd()
 
 	case PhaseStartMsg:
@@ -103,6 +108,7 @@ func (m DeployModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if idx >= 0 && idx < len(m.phases) {
 			m.current = idx
 			m.phases[idx].Status = PhaseActive
+			m.phaseStartedAt = time.Now()
 		}
 		return m, nil
 
@@ -154,27 +160,28 @@ func (m DeployModel) viewString() string {
 		m.ServerType,
 	))
 
-	for i, p := range m.phases {
+	for _, p := range m.phases {
 		var icon, detail string
 		switch p.Status {
 		case PhaseDone:
-			icon = SuccessStyle.Render("done")
-			detail = fmt.Sprintf("  %s", MutedStyle.Render(p.Elapsed.Round(time.Second).String()))
-		case PhaseActive:
-			elapsed := time.Since(m.startTime)
-			// Subtract elapsed time of previous phases
-			for j := 0; j < i; j++ {
-				elapsed -= m.phases[j].Elapsed
+			icon = SuccessStyle.Render("✓")
+			elapsed := p.Elapsed.Round(time.Second)
+			if elapsed < time.Second {
+				detail = fmt.Sprintf("  %s", MutedStyle.Render("<1s"))
+			} else {
+				detail = fmt.Sprintf("  %s", MutedStyle.Render(elapsed.String()))
 			}
-			icon = WarningStyle.Render("...")
+		case PhaseActive:
+			elapsed := time.Since(m.phaseStartedAt).Round(time.Second)
+			icon = TitleStyle.Render(spinnerFrames[m.spinnerIndex])
 			detail = fmt.Sprintf("  %s / ~%s",
-				WarningStyle.Render(elapsed.Round(time.Second).String()),
+				TitleStyle.Render(elapsed.String()),
 				MutedStyle.Render(p.Estimate.Round(time.Second).String()))
 		case PhaseFailed:
-			icon = ErrorStyle.Render("ERR")
+			icon = ErrorStyle.Render("✗")
 			detail = ""
 		default:
-			icon = MutedStyle.Render(" - ")
+			icon = MutedStyle.Render("○")
 			detail = ""
 		}
 		b.WriteString(fmt.Sprintf("  %s %-30s%s\n", icon, p.Name, detail))
@@ -183,15 +190,15 @@ func (m DeployModel) viewString() string {
 	b.WriteString(fmt.Sprintf("\n  Elapsed: %s\n", time.Since(m.startTime).Round(time.Second)))
 
 	if m.done && m.result != nil {
-		b.WriteString(fmt.Sprintf("\n  %s Agent deployed successfully!\n\n", SuccessStyle.Render("done")))
+		b.WriteString(fmt.Sprintf("\n  %s Agent deployed successfully!\n\n", SuccessStyle.Render("✓")))
 		b.WriteString(fmt.Sprintf("  URL:       %s\n", TitleStyle.Render(m.result.URL)))
 		b.WriteString(fmt.Sprintf("  IP:        %s\n", m.result.IP))
 		b.WriteString(fmt.Sprintf("  Server ID: %d\n", m.result.ServerID))
-		b.WriteString(fmt.Sprintf("  Total:     %s\n\n", m.result.Elapsed))
+		b.WriteString(fmt.Sprintf("  Total:     %s\n", m.result.Elapsed))
 	}
 
 	if m.done && m.err != nil {
-		b.WriteString(fmt.Sprintf("\n  %s %v\n\n", ErrorStyle.Render("Error:"), m.err))
+		b.WriteString(fmt.Sprintf("\n  %s %v\n", ErrorStyle.Render("Error:"), m.err))
 	}
 
 	return BoxStyle.Render(b.String()) + "\n"

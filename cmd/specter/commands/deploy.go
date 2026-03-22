@@ -172,15 +172,20 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Use a cancellable context for the goroutine so Ctrl+C stops it
+	deployCtx, deployCancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
 	// Deploy orchestration runs in a goroutine, sending messages to the TUI
 	go func() {
+		defer close(done)
 		totalStart := time.Now()
 
 		// Phase 0: Create VM
 		p.Send(tui.PhaseStartMsg(0))
 		phaseStart := time.Now()
 
-		sshKey, err := hc.GetSSHKey(ctx, cfg.Hetzner.SSHKeyName)
+		sshKey, err := hc.GetSSHKey(deployCtx, cfg.Hetzner.SSHKeyName)
 		if err != nil {
 			p.Send(tui.DeployErrMsg{Err: err})
 			return
@@ -204,7 +209,7 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		result, err := hc.CreateServer(ctx, hcloud.ServerCreateOpts{
+		result, err := hc.CreateServer(deployCtx, hcloud.ServerCreateOpts{
 			Name:       fmt.Sprintf("specter-%s", agentName),
 			ServerType: &hcloud.ServerType{Name: serverType},
 			Image:      &hcloud.Image{ID: cfg.Snapshot.ID},
@@ -227,11 +232,19 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		serverIP = result.Server.PublicNet.IPv4.IP.String()
 		p.Send(tui.PhaseDoneMsg{Index: 0, Elapsed: time.Since(phaseStart)})
 
+		// Check for cancellation between phases
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 1: DNS record
 		p.Send(tui.PhaseStartMsg(1))
 		phaseStart = time.Now()
 
-		dnsRecord, err := cf.CreateDNSRecord(ctx, fqdn, serverIP)
+		dnsRecord, err := cf.CreateDNSRecord(deployCtx, fqdn, serverIP)
 		if err != nil {
 			cleanup()
 			p.Send(tui.DeployErrMsg{Err: fmt.Errorf("failed to create DNS record: %w", err)})
@@ -240,11 +253,18 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		dnsRecordID = dnsRecord.ID
 		p.Send(tui.PhaseDoneMsg{Index: 1, Elapsed: time.Since(phaseStart)})
 
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 2: Wait for VM running
 		p.Send(tui.PhaseStartMsg(2))
 		phaseStart = time.Now()
 
-		_, err = hc.WaitForRunning(ctx, serverID)
+		_, err = hc.WaitForRunning(deployCtx, serverID)
 		if err != nil {
 			cleanup()
 			p.Send(tui.DeployErrMsg{Err: fmt.Errorf("VM failed to start: %w", err)})
@@ -252,11 +272,18 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		}
 		p.Send(tui.PhaseDoneMsg{Index: 2, Elapsed: time.Since(phaseStart)})
 
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 3: Wait for SSH
 		p.Send(tui.PhaseStartMsg(3))
 		phaseStart = time.Now()
 
-		sshClient, err := hetzner.WaitForSSH(ctx, serverIP)
+		sshClient, err := hetzner.WaitForSSH(deployCtx, serverIP)
 		if err != nil {
 			cleanup()
 			p.Send(tui.DeployErrMsg{Err: fmt.Errorf("SSH connection failed: %w", err)})
@@ -265,7 +292,15 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		defer sshClient.Close()
 		p.Send(tui.PhaseDoneMsg{Index: 3, Elapsed: time.Since(phaseStart)})
 
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 4: Deploy agent code
+		// TODO: Replace with git clone from ghostwright/specter-agent once the agent runtime is ready
 		p.Send(tui.PhaseStartMsg(4))
 		phaseStart = time.Now()
 
@@ -329,6 +364,13 @@ SVCEOF
 		}
 		p.Send(tui.PhaseDoneMsg{Index: 4, Elapsed: time.Since(phaseStart)})
 
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 5: Start services
 		p.Send(tui.PhaseStartMsg(5))
 		phaseStart = time.Now()
@@ -346,6 +388,13 @@ systemctl restart caddy
 		}
 		p.Send(tui.PhaseDoneMsg{Index: 5, Elapsed: time.Since(phaseStart)})
 
+		select {
+		case <-deployCtx.Done():
+			cleanup()
+			return
+		default:
+		}
+
 		// Phase 6: Wait for HTTPS
 		p.Send(tui.PhaseStartMsg(6))
 		phaseStart = time.Now()
@@ -362,9 +411,8 @@ systemctl restart caddy
 		tlsDeadline := time.After(120 * time.Second)
 		for {
 			select {
-			case <-ctx.Done():
+			case <-deployCtx.Done():
 				cleanup()
-				p.Send(tui.DeployErrMsg{Err: ctx.Err()})
 				return
 			case <-tlsDeadline:
 				cleanup()
@@ -420,6 +468,11 @@ systemctl restart caddy
 	}()
 
 	finalModel, err := p.Run()
+
+	// Signal goroutine to stop if still running and wait for cleanup
+	deployCancel()
+	<-done
+
 	if err != nil {
 		return err
 	}
@@ -536,6 +589,7 @@ func runDeployJSON(ctx context.Context, cfg *config.Config, state *config.State,
 	phases[3].elapsed = time.Since(phaseStart)
 
 	// Phase 4: Deploy agent code
+	// TODO: Replace with git clone from ghostwright/specter-agent once the agent runtime is ready
 	phaseStart = time.Now()
 
 	agentCode := `

@@ -42,6 +42,13 @@ func init() {
 	initCmd.Flags().BoolVarP(&initYes, "yes", "y", false, "Skip confirmation prompts")
 }
 
+func redactToken(token string) string {
+	if len(token) <= 4 {
+		return "****"
+	}
+	return "****" + token[len(token)-4:]
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -207,7 +214,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	if jsonOutput {
-		data, _ := json.MarshalIndent(cfg, "", "  ")
+		redacted := map[string]interface{}{
+			"domain":           cfg.Domain,
+			"location":         cfg.Hetzner.DefaultLocation,
+			"server_type":      cfg.Hetzner.DefaultServerType,
+			"ssh_key":          cfg.Hetzner.SSHKeyName,
+			"firewall_id":      cfg.Hetzner.FirewallID,
+			"snapshot_id":      cfg.Snapshot.ID,
+			"snapshot_version": cfg.Snapshot.Version,
+			"hetzner_token":    redactToken(cfg.Hetzner.Token),
+			"cloudflare_token": redactToken(cfg.Cloudflare.Token),
+		}
+		data, _ := json.MarshalIndent(redacted, "", "  ")
 		fmt.Println(string(data))
 	} else {
 		fmt.Printf("  %s Config saved to ~/.specter/config.yaml\n", tui.SuccessStyle.Render("done"))
