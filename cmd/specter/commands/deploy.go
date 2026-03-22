@@ -322,6 +322,15 @@ PKGEOF
 
 chown -R specter:specter /home/specter/app/
 
+# Ensure bun is available system-wide (G-10: bun installs per-user)
+if [ ! -f /usr/local/bin/bun ]; then
+  if [ -f /home/specter/.bun/bin/bun ]; then
+    ln -sf /home/specter/.bun/bin/bun /usr/local/bin/bun
+  elif [ -f /root/.bun/bin/bun ]; then
+    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
+  fi
+fi
+
 cat > /etc/systemd/system/specter-agent.service << 'SVCEOF'
 %s
 SVCEOF
@@ -360,11 +369,15 @@ systemctl restart caddy
 
 	healthURL := fmt.Sprintf("%s/health", url)
 	var healthResp *http.Response
+	tlsDeadline := time.After(120 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			cleanup()
 			return ctx.Err()
+		case <-tlsDeadline:
+			cleanup()
+			return fmt.Errorf("TLS/health check timed out after 120s. The server may need debugging. Run `specter ssh %s` to investigate", agentName)
 		default:
 		}
 
