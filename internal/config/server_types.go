@@ -124,9 +124,9 @@ func GetMonthlyPrice(serverType string, cache *ServerTypeCache) float64 {
 	case "cx33":
 		return 5.99
 	case "cx43":
-		return 14.99
+		return 9.99
 	case "cx53":
-		return 29.99
+		return 18.99
 	default:
 		return 5.99
 	}
@@ -243,8 +243,8 @@ func levenshtein(a, b string) int {
 var FallbackServerTypes = []ServerTypeInfo{
 	{Name: "cx23", Cores: 2, Memory: 4, Disk: 40, CPUType: "shared", Architecture: "x86", PriceMonthly: 3.49},
 	{Name: "cx33", Cores: 4, Memory: 8, Disk: 80, CPUType: "shared", Architecture: "x86", PriceMonthly: 5.99},
-	{Name: "cx43", Cores: 8, Memory: 16, Disk: 160, CPUType: "shared", Architecture: "x86", PriceMonthly: 14.99},
-	{Name: "cx53", Cores: 16, Memory: 32, Disk: 240, CPUType: "shared", Architecture: "x86", PriceMonthly: 29.99},
+	{Name: "cx43", Cores: 8, Memory: 16, Disk: 160, CPUType: "shared", Architecture: "x86", PriceMonthly: 9.99},
+	{Name: "cx53", Cores: 16, Memory: 32, Disk: 320, CPUType: "shared", Architecture: "x86", PriceMonthly: 18.99},
 }
 
 // SortedByPrice returns cache types sorted by monthly price.
