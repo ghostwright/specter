@@ -76,7 +76,7 @@ curl https://scout.yourdomain.com/health
 | :arrows_counterclockwise: | `specter update <name>` | Restart agent and refresh dependencies. |
 | :wastebasket: | `specter destroy <name>` | Delete VM, DNS record, and local state. Handles stale resources. |
 | :package: | `specter image build` | Create golden snapshot. Auto-increments version. |
-| :frame_with_picture: | `specter image list` | Show available snapshots with active marker. |
+| :framed_picture: | `specter image list` | Show available snapshots with active marker. |
 | :label: | `specter version` | Print version, commit, and build date. |
 
 Every command supports `--json` for structured output and `--yes` / `-y` to skip prompts.
@@ -165,18 +165,18 @@ specter destroy scout --json --yes
 ## Architecture
 
 ```
-Your Machine                       Hetzner Cloud
-+-----------------+                +---------------------------+
-| specter CLI     |                | VM (Ubuntu 24.04)         |
-|                 |  ---SSH--->    |                           |
-| Go binary       |                |  Caddy (auto-TLS)         |
-| ~3,500 lines    |  --HTTPS-->   |    reverse_proxy :3100    |
-|                 |                |  specter-agent (Bun)      |
-+-----------------+                |    /health -> JSON        |
-        |                          |  Docker (sidecars)        |
-        |                          |  systemd (auto-restart)   |
-        +----> Cloudflare DNS      |  ufw + Cloud Firewall     |
-               name.domain -> IP   +---------------------------+
+Your Machine                      Hetzner Cloud
++------------------+              +------------------------------+
+| specter CLI      |              | VM (Ubuntu 24.04)            |
+|                  | ---SSH--->   |                              |
+| Go binary        |              |   Caddy (auto-TLS)           |
+| ~3,500 lines     | --HTTPS-->  |     reverse_proxy :3100      |
+|                  |              |   specter-agent (Bun)        |
++------------------+              |     /health -> JSON          |
+       |                          |   Docker (sidecars)          |
+       |                          |   systemd (auto-restart)     |
+       +----> Cloudflare DNS      |   ufw + Cloud Firewall       |
+              name.domain -> IP   +------------------------------+
 ```
 
 ### What Gets Deployed
@@ -234,22 +234,22 @@ Before running `specter init`, you need:
 ## FAQ
 
 **How much does it cost?**
-Infrastructure is $3-19/month per agent depending on server type. Pricing is fetched from the Hetzner API and may change. Agent API costs (Anthropic, OpenAI, etc.) are separate.
+<br>Infrastructure is $3-19/month per agent depending on server type. Pricing is fetched from the Hetzner API and may change. Agent API costs (Anthropic, OpenAI, etc.) are separate.
 
 **Can I use my own domain?**
-Yes. During `specter init`, specify your domain. You need a Cloudflare-managed DNS zone.
+<br>Yes. During `specter init`, specify your domain. You need a Cloudflare-managed DNS zone.
 
 **What if Hetzner is down?**
-Specter stores agent state locally. If the API is unreachable during deploy, it fails cleanly. Running agents keep working as long as VMs are up.
+<br>Specter stores agent state locally. If the API is unreachable during deploy, it fails cleanly. Running agents keep working as long as VMs are up.
 
 **Is it secure?**
-Secrets are injected via cloud-init over HTTPS and cleaned up after boot. The VM is firewalled to three ports. systemd runs the agent with hardened directives. See the Security section.
+<br>Secrets are injected via cloud-init over HTTPS and cleaned up after boot. The VM is firewalled to three ports. systemd runs the agent with hardened directives. See the Security section.
 
 **Can I SSH into the VM?**
-Yes. `specter ssh <name>` connects as the `specter` user. Use `--root` for admin access.
+<br>Yes. `specter ssh <name>` connects as the `specter` user. Use `--root` for admin access.
 
 **What about the agent code?**
-Currently deploys a minimal health endpoint (v0.1.0 placeholder). The full specter-agent runtime with tool use, task queues, and MCP integration is under development.
+<br>Currently deploys a minimal health endpoint (v0.1.0 placeholder). The full specter-agent runtime with tool use, task queues, and MCP integration is under development.
 
 ## Contributing
 
