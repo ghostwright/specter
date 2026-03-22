@@ -9,11 +9,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var sshRoot bool
+
 var sshCmd = &cobra.Command{
 	Use:   "ssh <name>",
 	Short: "Connect to an agent's server",
+	Long:  "SSH into a deployed agent. Connects as 'specter' user by default. Use --root for admin access.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runSSH,
+}
+
+func init() {
+	sshCmd.Flags().BoolVar(&sshRoot, "root", false, "Connect as root instead of specter user")
 }
 
 func runSSH(cmd *cobra.Command, args []string) error {
@@ -29,14 +36,19 @@ func runSSH(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("agent '%s' not found. Run `specter list` to see deployed agents", agentName)
 	}
 
-	sshCmd := exec.Command("ssh",
+	user := "specter"
+	if sshRoot {
+		user = "root"
+	}
+
+	sshExec := exec.Command("ssh",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
-		fmt.Sprintf("root@%s", agent.IP),
+		fmt.Sprintf("%s@%s", user, agent.IP),
 	)
-	sshCmd.Stdin = os.Stdin
-	sshCmd.Stdout = os.Stdout
-	sshCmd.Stderr = os.Stderr
+	sshExec.Stdin = os.Stdin
+	sshExec.Stdout = os.Stdout
+	sshExec.Stderr = os.Stderr
 
-	return sshCmd.Run()
+	return sshExec.Run()
 }
