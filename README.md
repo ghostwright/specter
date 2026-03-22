@@ -170,7 +170,7 @@ Your Machine                      Hetzner Cloud
 | specter CLI      |              | VM (Ubuntu 24.04)            |
 |                  | ---SSH--->   |                              |
 | Go binary        |              |   Caddy (auto-TLS)           |
-| ~3,500 lines     | --HTTPS-->  |     reverse_proxy :3100      |
+| ~3,500 lines     | --HTTPS-->   |   reverse_proxy :3100        |
 |                  |              |   specter-agent (Bun)        |
 +------------------+              |     /health -> JSON          |
        |                          |   Docker (sidecars)          |
