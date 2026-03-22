@@ -86,6 +86,11 @@ func (c *Client) DeleteServer(ctx context.Context, server *hcloud.Server) error 
 	return nil
 }
 
+// IsNotFound checks if an error from hcloud-go is a 404 not found error.
+func IsNotFound(err error) bool {
+	return hcloud.IsError(err, hcloud.ErrorCodeNotFound)
+}
+
 func (c *Client) ListSpecterServers(ctx context.Context) ([]*hcloud.Server, error) {
 	servers, err := c.API.Server.AllWithOpts(ctx, hcloud.ServerListOpts{
 		ListOpts: hcloud.ListOpts{

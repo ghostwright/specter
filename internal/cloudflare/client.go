@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,24 @@ import (
 )
 
 const baseURL = "https://api.cloudflare.com/client/v4"
+
+// NotFoundError is returned when a resource does not exist.
+type NotFoundError struct {
+	Resource string
+}
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("%s not found", e.Resource)
+}
+
+// IsNotFound checks if an error is a NotFoundError.
+func IsNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var nfe *NotFoundError
+	return errors.As(err, &nfe)
+}
 
 type Client struct {
 	token  string
@@ -137,6 +156,9 @@ func (c *Client) DeleteDNSRecord(ctx context.Context, recordID string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		return &NotFoundError{Resource: "DNS record"}
+	}
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Cloudflare returned %d: %s", resp.StatusCode, body)

@@ -68,20 +68,44 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 
 	// Delete DNS record
 	if agent.DNSRecordID != "" {
-		fmt.Printf("  Deleting DNS record... ")
+		if !jsonOutput {
+			fmt.Printf("  Deleting DNS record... ")
+		}
 		if err := cf.DeleteDNSRecord(ctx, agent.DNSRecordID); err != nil {
-			fmt.Println(tui.WarningStyle.Render("failed: " + err.Error()))
+			if cloudflare.IsNotFound(err) {
+				if !jsonOutput {
+					fmt.Println(tui.MutedStyle.Render("already deleted"))
+				}
+			} else {
+				if !jsonOutput {
+					fmt.Println(tui.WarningStyle.Render("failed: " + err.Error()))
+				}
+			}
 		} else {
-			fmt.Println(tui.SuccessStyle.Render("done"))
+			if !jsonOutput {
+				fmt.Println(tui.SuccessStyle.Render("done"))
+			}
 		}
 	}
 
 	// Delete server
-	fmt.Printf("  Deleting server... ")
+	if !jsonOutput {
+		fmt.Printf("  Deleting server... ")
+	}
 	if err := hc.DeleteServer(ctx, &hcloud.Server{ID: agent.ServerID}); err != nil {
-		fmt.Println(tui.WarningStyle.Render("failed: " + err.Error()))
+		if hetzner.IsNotFound(err) {
+			if !jsonOutput {
+				fmt.Println(tui.MutedStyle.Render("already deleted"))
+			}
+		} else {
+			if !jsonOutput {
+				fmt.Println(tui.WarningStyle.Render("failed: " + err.Error()))
+			}
+		}
 	} else {
-		fmt.Println(tui.SuccessStyle.Render("done"))
+		if !jsonOutput {
+			fmt.Println(tui.SuccessStyle.Render("done"))
+		}
 	}
 
 	// Remove from state
