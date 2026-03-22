@@ -26,6 +26,8 @@ var (
 	deployServerType string
 	deployLocation   string
 	deployYes        bool
+	deployEnv        []string
+	deployEnvFile    string
 )
 
 var deployCmd = &cobra.Command{
@@ -41,6 +43,8 @@ func init() {
 	deployCmd.Flags().StringVar(&deployServerType, "server-type", "", "Hetzner server type (default from config)")
 	deployCmd.Flags().StringVar(&deployLocation, "location", "", "Hetzner location (default from config)")
 	deployCmd.Flags().BoolVarP(&deployYes, "yes", "y", false, "Skip confirmation prompts")
+	deployCmd.Flags().StringArrayVar(&deployEnv, "env", nil, "Environment variable (KEY=VALUE, repeatable)")
+	deployCmd.Flags().StringVar(&deployEnvFile, "env-file", "", "Path to .env file")
 }
 
 var validName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -185,6 +189,25 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Parse environment variables
+	envVars := make(map[string]string)
+	if deployEnvFile != "" {
+		fileVars, err := templates.ParseEnvFile(deployEnvFile)
+		if err != nil {
+			return fmt.Errorf("could not read env file: %w", err)
+		}
+		for k, v := range fileVars {
+			envVars[k] = v
+		}
+	}
+	for _, e := range deployEnv {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid env var: %s (expected KEY=VALUE)", e)
+		}
+		envVars[parts[0]] = parts[1]
+	}
+
 	// Phase 0: Look up SSH key (G-16)
 	phaseStart := startPhase(0)
 
@@ -197,6 +220,8 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	userData, err := templates.RenderCloudInit(templates.CloudInitData{
 		AgentName: agentName,
 		Domain:    cfg.Domain,
+		Role:      deployRole,
+		EnvVars:   envVars,
 	})
 	if err != nil {
 		return err
