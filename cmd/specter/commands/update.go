@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/ghostwright/specter/internal/config"
@@ -39,23 +40,86 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	fmt.Printf("  Connecting to %s... ", agentName)
+	if !jsonOutput {
+		fmt.Printf("  Connecting to %s... ", agentName)
+	}
 	sshClient, err := hetzner.SSHConnect(agent.IP)
 	if err != nil {
 		return fmt.Errorf("SSH connection failed: %w", err)
 	}
 	defer sshClient.Close()
-	fmt.Println(tui.SuccessStyle.Render("connected"))
+	if !jsonOutput {
+		fmt.Println(tui.SuccessStyle.Render("connected"))
+	}
 
-	fmt.Printf("  Restarting agent... ")
+	// Pull latest code if git repo exists
+	if !jsonOutput {
+		fmt.Printf("  Pulling latest code... ")
+	}
+	pullOutput, err := hetzner.SSHRun(sshClient, `
+cd /home/specter/app
+if [ -d .git ]; then
+    sudo -u specter git pull origin main 2>&1 || echo "git-pull-skipped"
+else
+    echo "no-git-repo"
+fi
+`)
+	if err != nil {
+		if !jsonOutput {
+			fmt.Println(tui.WarningStyle.Render("skipped"))
+		}
+	} else {
+		pullOutput = strings.TrimSpace(pullOutput)
+		if !jsonOutput {
+			if pullOutput == "no-git-repo" {
+				fmt.Println(tui.MutedStyle.Render("no git repo"))
+			} else {
+				fmt.Println(tui.SuccessStyle.Render("done"))
+			}
+		}
+	}
+
+	// Install dependencies
+	if !jsonOutput {
+		fmt.Printf("  Installing dependencies... ")
+	}
+	_, err = hetzner.SSHRun(sshClient, `
+cd /home/specter/app
+if [ -f package.json ]; then
+    sudo -u specter /usr/local/bin/bun install 2>&1
+else
+    echo "no-package-json"
+fi
+`)
+	if err != nil {
+		if !jsonOutput {
+			fmt.Println(tui.WarningStyle.Render("skipped"))
+		}
+	} else {
+		if !jsonOutput {
+			fmt.Println(tui.SuccessStyle.Render("done"))
+		}
+	}
+
+	// Restart the service
+	if !jsonOutput {
+		fmt.Printf("  Restarting agent... ")
+	}
 	_, err = hetzner.SSHRun(sshClient, "systemctl restart specter-agent")
 	if err != nil {
-		fmt.Println(tui.ErrorStyle.Render("failed"))
+		if !jsonOutput {
+			fmt.Println(tui.ErrorStyle.Render("failed"))
+		}
 		return fmt.Errorf("restart failed: %w", err)
 	}
-	fmt.Println(tui.SuccessStyle.Render("done"))
+	if !jsonOutput {
+		fmt.Println(tui.SuccessStyle.Render("done"))
+	}
 
-	fmt.Printf("  Checking health... ")
+	// Health check
+	if !jsonOutput {
+		fmt.Printf("  Checking health... ")
+	}
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	healthURL := agent.URL + "/health"
 
@@ -80,11 +144,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	if !healthy {
-		fmt.Println(tui.ErrorStyle.Render("failed"))
+		if !jsonOutput {
+			fmt.Println(tui.ErrorStyle.Render("failed"))
+		}
 		return fmt.Errorf("health check failed after restart. Run `specter logs %s` to investigate", agentName)
 	}
 
-	fmt.Println(tui.SuccessStyle.Render("healthy"))
+	if !jsonOutput {
+		fmt.Println(tui.SuccessStyle.Render("healthy"))
+	}
 
 	if jsonOutput {
 		data, _ := json.MarshalIndent(map[string]string{
@@ -92,6 +160,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			"status": "updated",
 		}, "", "  ")
 		fmt.Println(string(data))
+		return nil
 	}
 
 	fmt.Printf("\n  %s %s updated and healthy\n\n", tui.SuccessStyle.Render("done"), agentName)
