@@ -449,13 +449,31 @@ systemctl restart caddy
 	totalElapsed := time.Since(totalStart).Round(time.Second)
 
 	if jsonOutput {
+		type phaseResult struct {
+			Name    string  `json:"name"`
+			Seconds float64 `json:"seconds"`
+		}
+		phaseResults := make([]phaseResult, len(phases))
+		for i, p := range phases {
+			phaseResults[i] = phaseResult{
+				Name:    p.name,
+				Seconds: p.elapsed.Seconds(),
+			}
+		}
+
 		data, _ := json.MarshalIndent(map[string]interface{}{
-			"name":       agentName,
-			"url":        url,
-			"ip":         serverIP,
-			"server_id":  serverID,
-			"elapsed":    totalElapsed.String(),
-			"health":     healthData,
+			"status":              "deployed",
+			"name":                agentName,
+			"role":                deployRole,
+			"url":                 url,
+			"ip":                  serverIP,
+			"server_id":           serverID,
+			"server_type":         serverType,
+			"location":            location,
+			"dns_record_id":       dnsRecordID,
+			"deploy_time_seconds": totalElapsed.Seconds(),
+			"phases":              phaseResults,
+			"health":              healthData,
 		}, "", "  ")
 		fmt.Println(string(data))
 		return nil
