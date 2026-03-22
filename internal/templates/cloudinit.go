@@ -31,7 +31,6 @@ write_files:
           reverse_proxy localhost:3100
       }
 runcmd:
-  - systemctl restart caddy
   - rm -f /var/lib/cloud/instance/user-data.txt
   - rm -f /var/lib/cloud/instance/scripts/part-001
 `

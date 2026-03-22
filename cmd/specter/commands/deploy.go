@@ -343,13 +343,10 @@ PKGEOF
 
 chown -R specter:specter /home/specter/app/
 
-# Ensure bun is available system-wide (G-10: bun installs per-user)
-if [ ! -f /usr/local/bin/bun ]; then
-  if [ -f /home/specter/.bun/bin/bun ]; then
-    ln -sf /home/specter/.bun/bin/bun /usr/local/bin/bun
-  elif [ -f /root/.bun/bin/bun ]; then
-    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
-  fi
+# Ensure bun is available and functional (G-19: bun binary can be 0 bytes after snapshot)
+if ! /usr/local/bin/bun --version > /dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash
+  cp /root/.bun/bin/bun /usr/local/bin/bun
 fi
 
 cat > /etc/systemd/system/specter-agent.service << 'SVCEOF'
@@ -379,6 +376,16 @@ SVCEOF
 systemctl daemon-reload
 systemctl enable specter-agent
 systemctl start specter-agent
+
+# Wait for agent to be ready (retry up to 30 seconds)
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3100/health > /dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+systemctl enable caddy
 systemctl restart caddy
 `
 		if _, err := hetzner.SSHRun(sshClient, startScript); err != nil {
@@ -631,12 +638,10 @@ PKGEOF
 
 chown -R specter:specter /home/specter/app/
 
-if [ ! -f /usr/local/bin/bun ]; then
-  if [ -f /home/specter/.bun/bin/bun ]; then
-    ln -sf /home/specter/.bun/bin/bun /usr/local/bin/bun
-  elif [ -f /root/.bun/bin/bun ]; then
-    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
-  fi
+# Ensure bun is available and functional (G-19: bun binary can be 0 bytes after snapshot)
+if ! /usr/local/bin/bun --version > /dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash
+  cp /root/.bun/bin/bun /usr/local/bin/bun
 fi
 
 cat > /etc/systemd/system/specter-agent.service << 'SVCEOF'
@@ -656,6 +661,16 @@ SVCEOF
 systemctl daemon-reload
 systemctl enable specter-agent
 systemctl start specter-agent
+
+# Wait for agent to be ready (retry up to 30 seconds)
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3100/health > /dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+
+systemctl enable caddy
 systemctl restart caddy
 `
 	if _, err := hetzner.SSHRun(sshClient, startScript); err != nil {

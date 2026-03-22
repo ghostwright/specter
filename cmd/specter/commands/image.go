@@ -61,7 +61,9 @@ curl -fsSL https://get.docker.com | sh
 
 echo "=== Installing Bun ==="
 curl -fsSL https://bun.sh/install | bash
-ln -sf /root/.bun/bin/bun /usr/local/bin/bun
+cp /root/.bun/bin/bun /usr/local/bin/bun
+chmod +x /usr/local/bin/bun
+/usr/local/bin/bun --version
 
 echo "=== Installing Caddy ==="
 apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
@@ -102,6 +104,23 @@ chmod 600 /swapfile
 mkswap /swapfile
 swapon /swapfile
 echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+
+echo "=== Configuring Caddy for snapshot ==="
+systemctl stop caddy
+systemctl disable caddy
+# Placeholder Caddyfile that won't trigger TLS on boot
+cat > /etc/caddy/Caddyfile << 'CADDYEOF'
+:80 {
+    respond "specter: not configured" 503
+}
+CADDYEOF
+
+echo "=== Verifying bun binary ==="
+ls -la /usr/local/bin/bun
+/usr/local/bin/bun --version
+
+echo "=== Flushing writes to disk ==="
+sync
 
 echo "=== Resetting cloud-init ==="
 cloud-init clean --logs
