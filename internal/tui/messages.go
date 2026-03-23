@@ -161,6 +161,40 @@ type UpdateCompleteMsg struct {
 	Err       error
 }
 
+// -- Setup wizard messages --
+
+// SetupWizardCompleteMsg signals the setup wizard finished successfully.
+type SetupWizardCompleteMsg struct {
+	Cfg interface{} // *config.Config, typed as interface to avoid import cycle
+}
+
+// SetupWizardCancelMsg signals the setup wizard was cancelled.
+type SetupWizardCancelMsg struct{}
+
+// -- Image build messages --
+
+// ImageBuildPhaseMsg updates image build progress in the dashboard.
+type ImageBuildPhaseMsg struct {
+	Phase   int
+	Status  string // "active", "done", "error"
+	Sub     string // sub-status from provisioning script (=== lines)
+	Elapsed time.Duration
+	Err     error
+}
+
+// ImageBuildCompleteMsg signals image build finished.
+type ImageBuildCompleteMsg struct {
+	SnapshotID int64
+	Version    string
+	DiskSize   float32
+	Elapsed    time.Duration
+}
+
+// ImageBuildErrorMsg signals image build failed.
+type ImageBuildErrorMsg struct {
+	Err error
+}
+
 // -- Status flash --
 
 // StatusFlashMsg shows a temporary status message.

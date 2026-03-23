@@ -41,7 +41,16 @@ func (p StatusBarPanel) View(state AppState, hasAgent bool, agentCount int, tota
 			{"esc", "cancel"},
 			{"enter", "confirm"},
 		}
+	case stateSetup:
+		hints = []keyHint{
+			{"esc", "cancel"},
+			{"enter", "next"},
+		}
 	case stateDeployProgress:
+		hints = []keyHint{
+			{"esc/q", "dismiss (when done)"},
+		}
+	case stateImageBuild:
 		hints = []keyHint{
 			{"esc/q", "dismiss (when done)"},
 		}
@@ -64,6 +73,7 @@ func (p StatusBarPanel) View(state AppState, hasAgent bool, agentCount int, tota
 		if hasAgent {
 			hints = []keyHint{
 				{"d", "deploy"},
+				{"b", "build image"},
 				{"s", "ssh"},
 				{"l", "logs"},
 				{"o", "open"},
@@ -75,6 +85,7 @@ func (p StatusBarPanel) View(state AppState, hasAgent bool, agentCount int, tota
 		} else {
 			hints = []keyHint{
 				{"d", "deploy"},
+				{"b", "build image"},
 				{"r", "refresh"},
 				{"?", "help"},
 			}

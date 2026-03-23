@@ -48,6 +48,7 @@ func (h HelpOverlay) View() string {
 			title: "Actions",
 			keys: []struct{ key, desc string }{
 				{"d", "Deploy a new agent"},
+				{"b", "Build golden image (snapshot)"},
 				{"s / enter", "SSH into selected agent"},
 				{"l", "View agent logs (scrollable)"},
 				{"o", "Open agent URL in browser"},

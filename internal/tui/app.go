@@ -30,6 +30,8 @@ const (
 	stateDestroying
 	stateViewingLogs
 	stateUpdating
+	stateSetup
+	stateImageBuild
 )
 
 // PanelID identifies which panel has focus.
@@ -72,6 +74,8 @@ type AppModel struct {
 	deployProgress *DeployProgressModel
 	confirmDialog  *ConfirmDialogModel
 	logsViewport   *LogsViewportModel
+	setupWizard    *SetupWizardModel
+	imageBuild     *ImageBuildModel
 
 	// Flash status message
 	flashMsg  string
@@ -108,13 +112,31 @@ func NewAppModel(cfg *config.Config) *AppModel {
 	}
 }
 
+// NewSetupAppModel creates the app in setup wizard mode (no config yet).
+func NewSetupAppModel() *AppModel {
+	wizard := NewSetupWizardModel()
+	return &AppModel{
+		state:       stateSetup,
+		focusPanel:  panelAgentList,
+		loading:     false,
+		agentList:   NewAgentListPanel(),
+		agentDetail: NewAgentDetailPanel(),
+		statusBar:   NewStatusBarPanel(),
+		helpOverlay: NewHelpOverlay(),
+		setupWizard: &wizard,
+	}
+}
+
 // SetProgram sets the tea.Program reference (needed for deploy progress).
 func (m *AppModel) SetProgram(p *tea.Program) {
 	m.program = p
 }
 
-// Init starts loading agents and health polling.
+// Init starts loading agents and health polling, or the setup wizard.
 func (m *AppModel) Init() tea.Cmd {
+	if m.state == stateSetup && m.setupWizard != nil {
+		return m.setupWizard.Init()
+	}
 	return tea.Batch(
 		loadAgentsCmd(m.cfg),
 		healthTickCmd(),
@@ -124,6 +146,12 @@ func (m *AppModel) Init() tea.Cmd {
 
 // Update handles all messages.
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When in setup wizard state, forward ALL messages to the wizard
+	// (huh needs cursor blink, focus, etc. not just key presses).
+	if m.state == stateSetup && m.setupWizard != nil {
+		return m.updateSetupWizardAll(msg)
+	}
+
 	// When in deploy form state, forward ALL messages to the form
 	// (huh needs cursor blink, focus, etc. not just key presses).
 	if m.state == stateDeployForm && m.deployForm != nil {
@@ -155,6 +183,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateLogs(msg)
 		case stateDeployProgress:
 			return m.updateDeployProgress(msg)
+		case stateImageBuild:
+			return m.updateImageBuild(msg)
 		case stateDashboard:
 			return m.updateDashboard(msg)
 		}
@@ -200,13 +230,45 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.hasSnapshot = msg.Exists
 		return m, nil
 
+	// -- Image build messages --
+
+	case ImageBuildPhaseMsg:
+		if m.imageBuild != nil {
+			m.imageBuild.HandleMsg(msg)
+		}
+		return m, nil
+
+	case ImageBuildCompleteMsg:
+		if m.imageBuild != nil {
+			m.imageBuild.HandleMsg(msg)
+		}
+		m.hasSnapshot = true
+		// Reload config to pick up new snapshot ID
+		if newCfg, err := config.Load(); err == nil {
+			m.cfg = newCfg
+		}
+		m.flashMsg = fmt.Sprintf("Golden image built (snapshot %d)", msg.SnapshotID)
+		m.flashType = "success"
+		return m, flashClearCmd()
+
+	case ImageBuildErrorMsg:
+		if m.imageBuild != nil {
+			m.imageBuild.HandleMsg(msg)
+		}
+		m.flashMsg = fmt.Sprintf("Image build failed: %v", msg.Err)
+		m.flashType = "error"
+		return m, flashClearCmd()
+
 	case spinTickMsg:
 		m.spinnerIdx = (m.spinnerIdx + 1) % len(spinChars)
 		// Also update deploy progress spinner
 		if m.deployProgress != nil {
 			m.deployProgress.HandleMsg(msg)
 		}
-		if m.loading || m.state == stateDeployProgress {
+		if m.imageBuild != nil {
+			m.imageBuild.HandleMsg(msg)
+		}
+		if m.loading || m.state == stateDeployProgress || m.state == stateImageBuild {
 			return m, spinTickCmd()
 		}
 		return m, nil
@@ -350,6 +412,10 @@ func (m *AppModel) View() tea.View {
 	switch m.state {
 	case stateLoading:
 		content = m.loadingView()
+	case stateSetup:
+		if m.setupWizard != nil {
+			content = m.setupWizard.View()
+		}
 	case stateHelp:
 		content = m.helpOverlay.View()
 	case stateDeployForm:
@@ -362,6 +428,8 @@ func (m *AppModel) View() tea.View {
 		}
 	case stateDeployProgress:
 		content = m.deployProgressView()
+	case stateImageBuild:
+		content = m.imageBuildView()
 	case stateViewingLogs:
 		content = m.logsView()
 	default:
@@ -431,6 +499,9 @@ func (m *AppModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "u":
 		return m.startUpdate()
+
+	case "b":
+		return m.startImageBuild()
 	}
 
 	return m, nil
@@ -537,11 +608,79 @@ func (m *AppModel) updateDeployProgress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	return m, nil
 }
 
+func (m *AppModel) updateSetupWizardAll(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle ctrl+c globally even in setup state
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if keyMsg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+
+	// Handle window resize
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsMsg.Width
+		m.height = wsMsg.Height
+		m.recalcLayout()
+		return m, nil
+	}
+
+	// Handle setup completion/cancel messages directly here.
+	// Same pattern as updateDeployFormAll to avoid the blank screen bug:
+	// these messages are produced by the wizard's tea.Cmd and sent back
+	// through Update, but the state check intercepts them before they reach
+	// the main switch.
+	switch msg := msg.(type) {
+	case SetupWizardCompleteMsg:
+		m.setupWizard = nil
+		if cfgPtr, ok := msg.Cfg.(*config.Config); ok {
+			m.cfg = cfgPtr
+			m.state = stateLoading
+			m.loading = true
+			return m, tea.Batch(
+				loadAgentsCmd(m.cfg),
+				healthTickCmd(),
+				spinTickCmd(),
+			)
+		}
+		return m, tea.Quit
+
+	case SetupWizardCancelMsg:
+		m.setupWizard = nil
+		return m, tea.Quit
+
+	case setupValidationResult:
+		// Process the validation result inside the wizard
+		resultMsg := m.setupWizard.HandleSetupResult(msg)
+		if resultMsg != nil {
+			// Setup succeeded, send the completion message
+			return m, func() tea.Msg { return resultMsg }
+		}
+		// Error case: wizard shows error, keep spinning for UI
+		return m, spinTickCmd()
+	}
+
+	updated, cmd := m.setupWizard.Update(msg)
+	m.setupWizard = &updated
+	return m, cmd
+}
+
+func (m *AppModel) updateImageBuild(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "escape", "q":
+		if m.imageBuild != nil && m.imageBuild.done {
+			m.imageBuild = nil
+			m.state = stateDashboard
+			return m, loadAgentsCmd(m.cfg)
+		}
+	}
+	return m, nil
+}
+
 // -- Action starters --
 
 func (m *AppModel) startDeployForm() (tea.Model, tea.Cmd) {
 	if m.cfg.Snapshot.ID == 0 {
-		m.flashMsg = "No golden snapshot. Run `specter image build` first."
+		m.flashMsg = "No golden snapshot. Press [b] to build one."
 		m.flashType = "error"
 		return m, flashClearCmd()
 	}
@@ -629,6 +768,24 @@ func (m *AppModel) startUpdate() (tea.Model, tea.Cmd) {
 	return m, updateAgentCmd(agent.Name, agent.IP)
 }
 
+func (m *AppModel) startImageBuild() (tea.Model, tea.Cmd) {
+	if m.cfg == nil {
+		m.flashMsg = "No config loaded."
+		m.flashType = "error"
+		return m, flashClearCmd()
+	}
+
+	build := NewImageBuildModel()
+	build.SetSize(m.width, m.height)
+	m.imageBuild = &build
+	m.state = stateImageBuild
+
+	return m, tea.Batch(
+		spinTickCmd(),
+		RunImageBuildCmd(m.program, m.cfg),
+	)
+}
+
 // -- View rendering methods --
 
 func (m *AppModel) loadingView() string {
@@ -656,6 +813,41 @@ func (m *AppModel) deployProgressView() string {
 		body = m.deployProgress.View()
 	} else {
 		body = "Deploying..."
+	}
+
+	boxWidth := m.width - 4
+	if boxWidth > 70 {
+		boxWidth = 70
+	}
+	box := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Width(boxWidth).
+		Render(body)
+
+	centered := lipgloss.Place(m.width, m.height-titleBarRows-statusBarRows,
+		lipgloss.Center, lipgloss.Center,
+		box,
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, centered, bar)
+}
+
+func (m *AppModel) imageBuildView() string {
+	if m.width < 20 || m.height < 8 {
+		return "Terminal too small"
+	}
+
+	title := m.titleBar()
+	m.statusBar.SetWidth(m.width)
+	bar := m.statusBar.View(m.state, false, len(m.agents), m.totalCost())
+
+	var body string
+	if m.imageBuild != nil {
+		body = m.imageBuild.View()
+	} else {
+		body = "Building image..."
 	}
 
 	boxWidth := m.width - 4
@@ -896,6 +1088,12 @@ func (m *AppModel) recalcLayout() {
 	}
 	if m.logsViewport != nil {
 		m.logsViewport.SetSize(m.width, m.height)
+	}
+	if m.setupWizard != nil {
+		m.setupWizard.SetSize(m.width, m.height)
+	}
+	if m.imageBuild != nil {
+		m.imageBuild.SetSize(m.width, m.height)
 	}
 }
 

@@ -24,8 +24,15 @@ func main() {
 func runDashboard() {
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  No config found. Run `specter init` to set up.\n")
-		os.Exit(1)
+		// No config found - launch setup wizard instead of exiting
+		model := tui.NewSetupAppModel()
+		p := tea.NewProgram(model)
+		model.SetProgram(p)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	model := tui.NewAppModel(cfg)
