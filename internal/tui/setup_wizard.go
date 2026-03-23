@@ -30,9 +30,9 @@ type setupStepInfo struct {
 
 // SetupWizardModel is the huh-based setup form for first-run configuration.
 type SetupWizardModel struct {
-	form  *huh.Form
-	phase setupPhase
-	width int
+	form   *huh.Form
+	phase  setupPhase
+	width  int
 	height int
 
 	// Form values
@@ -403,7 +403,7 @@ func (m *SetupWizardModel) runSetupCmd() tea.Cmd {
 
 // setupValidationResult carries the result of the async setup pipeline.
 type setupValidationResult struct {
-	step       int    // which step failed (only meaningful on error)
+	step       int // which step failed (only meaningful on error)
 	err        error
 	cfg        *config.Config
 	sshDetail  string
