@@ -461,6 +461,33 @@ func (m *AppModel) updateDeployFormAll(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle form completion/cancel messages directly here
+	// (these are produced by the form's tea.Cmd and sent back through Update,
+	// but the state check at line 129 intercepts them before they reach the
+	// main switch. Handle them here to avoid the blank screen bug.)
+	switch msg.(type) {
+	case DeployFormCompleteMsg:
+		m.deployForm = nil
+		m.state = stateDeployProgress
+		complete := msg.(DeployFormCompleteMsg)
+		location := m.cfg.Hetzner.DefaultLocation
+		envVars := complete.EnvVars
+		if envVars == nil {
+			envVars = make(map[string]string)
+		}
+		progress := NewDeployProgressModel(complete.Name, complete.Role, complete.ServerType, location)
+		progress.SetSize(m.width, m.height)
+		m.deployProgress = &progress
+		return m, tea.Batch(
+			spinTickCmd(),
+			RunDeployCmd(m.program, m.cfg, complete.Name, complete.Role, complete.ServerType, location, envVars),
+		)
+	case DeployFormCancelMsg:
+		m.deployForm = nil
+		m.state = stateDashboard
+		return m, nil
+	}
+
 	updated, cmd := m.deployForm.Update(msg)
 	m.deployForm = &updated
 	return m, cmd
