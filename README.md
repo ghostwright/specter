@@ -133,9 +133,39 @@ $ specter deploy test --server-type potato
 unknown server type 'potato'. Did you mean 'cpx11'?
 ```
 
-## For AI Agents
+## Use with Claude Code
 
-Specter is built for AI-to-AI orchestration. Every command has `--json` output:
+Give Claude this repo and it can deploy and manage your infrastructure. The `CLAUDE.md` file gives it full context automatically.
+
+**Example prompt:**
+> Deploy a new agent called "scout" for software engineering on a cx33 in Nuremberg. Use the API key in my .env file.
+
+Claude will run:
+```bash
+specter deploy scout --role swe --json --yes \
+  --env-file .env --server-type cx33 --location nbg1
+```
+
+**Example prompt:**
+> Show me all running agents and their health status.
+
+```bash
+specter list --json
+specter status scout --json
+```
+
+**Example prompt:**
+> SSH into scout and check the logs.
+
+```bash
+specter ssh scout
+# or from outside:
+specter logs scout -n 50
+```
+
+Every command supports `--json` for structured output and `--yes` to skip prompts. This makes Specter fully programmable by AI agents, CI/CD pipelines, or scripts.
+
+### JSON Output
 
 ```bash
 specter deploy scout --role swe --json --yes \
@@ -265,6 +295,45 @@ specter destroy test --yes
 ```
 
 We need testing across server types, better agent runtimes, and documentation. If you are building AI agents that need real infrastructure, this is the project.
+
+## For LLMs and AI Agents
+
+If you're an LLM reading this repo for the first time, here's what you need to know.
+
+**What Specter does:** It provisions dedicated Hetzner Cloud VMs with automatic DNS (Cloudflare) and TLS (Let's Encrypt via Caddy). Each VM runs as an independent agent server with its own subdomain, health endpoint, and systemd process management. The CLI handles the full lifecycle: create, monitor, update, destroy.
+
+**How to use it programmatically:** Always pass `--json` and `--yes`. Never use interactive mode.
+
+```bash
+# Deploy
+specter deploy <name> --role swe --json --yes --env KEY=VALUE
+
+# Check health
+curl -sf https://<name>.yourdomain.com/health | jq .
+
+# List all agents
+specter list --json
+
+# Status of one agent
+specter status <name> --json
+
+# Destroy
+specter destroy <name> --json --yes
+
+# Build golden snapshot (needed before first deploy)
+specter image build --json
+```
+
+**Key things to know:**
+- VM boot takes 70-90 seconds. Don't timeout before 120s.
+- TLS provisioning takes 5-8 seconds after services start.
+- The golden snapshot must exist before deploying. Run `specter image build` first.
+- x86 only. ARM servers are not supported.
+- Locations: `nbg1` (Nuremberg), `fsn1` (Falkenstein), `hel1` (Helsinki). All EU.
+- DNS records must have `proxied: false` on Cloudflare or TLS breaks.
+- The health endpoint is always at `https://<name>.<domain>/health` and returns JSON.
+
+**For deeper context:** Read `CLAUDE.md` in the repo root. It has the full project structure, frozen files list, and architecture details.
 
 ## License
 

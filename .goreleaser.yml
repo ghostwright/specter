@@ -1,0 +1,53 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - main: ./cmd/specter
+    binary: specter
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ghostwright/specter/pkg/version.Version={{.Version}}
+      - -X github.com/ghostwright/specter/pkg/version.Commit={{.Commit}}
+      - -X github.com/ghostwright/specter/pkg/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+brews:
+  - repository:
+      owner: ghostwright
+      name: homebrew-specter
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://specter.tools"
+    description: "Deploy AI agents to dedicated VMs in 90 seconds"
+    license: "Apache-2.0"
+    install: |
+      bin.install "specter"
+    test: |
+      system "#{bin}/specter", "version"

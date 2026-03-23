@@ -5,7 +5,7 @@ LDFLAGS  = -ldflags "-X github.com/ghostwright/specter/pkg/version.Version=$(VER
                       -X github.com/ghostwright/specter/pkg/version.Commit=$(COMMIT) \
                       -X github.com/ghostwright/specter/pkg/version.Date=$(DATE)"
 
-.PHONY: build install clean test
+.PHONY: build install clean test lint ci run
 
 build:
 	go build $(LDFLAGS) -o bin/specter ./cmd/specter
@@ -14,10 +14,15 @@ install:
 	go install $(LDFLAGS) ./cmd/specter
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/
 
 test:
 	go test ./...
+
+lint:
+	go vet ./...
+
+ci: lint build
 
 run:
 	go run $(LDFLAGS) ./cmd/specter $(ARGS)

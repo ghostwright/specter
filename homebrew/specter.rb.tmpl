@@ -1,0 +1,38 @@
+# This is a template showing what the Homebrew formula looks like.
+# GoReleaser generates the actual formula in ghostwright/homebrew-specter.
+
+class Specter < Formula
+  desc "Deploy AI agents to dedicated VMs in 90 seconds"
+  homepage "https://specter.tools"
+  license "Apache-2.0"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/ghostwright/specter/releases/download/v#{version}/specter_#{version}_darwin_arm64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER"
+    end
+    on_intel do
+      url "https://github.com/ghostwright/specter/releases/download/v#{version}/specter_#{version}_darwin_amd64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/ghostwright/specter/releases/download/v#{version}/specter_#{version}_linux_arm64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER"
+    end
+    on_intel do
+      url "https://github.com/ghostwright/specter/releases/download/v#{version}/specter_#{version}_linux_amd64.tar.gz"
+      sha256 "SHA256_PLACEHOLDER"
+    end
+  end
+
+  def install
+    bin.install "specter"
+  end
+
+  test do
+    system "#{bin}/specter", "version"
+  end
+end
