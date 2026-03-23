@@ -24,7 +24,13 @@ specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
 
 One command. Dedicated VM on Hetzner Cloud, automatic DNS on Cloudflare, TLS via Let's Encrypt, systemd hardening, firewall, and a health endpoint. You own the infrastructure. You own the data. No vendor lock-in.
 
-<!-- <img src="demo.gif" width="720" alt="Specter deploy in action"> -->
+<p align="center">
+  <a href="https://www.loom.com/share/c0c94bfcaed748048411803ef7dd83e2">
+    <img src="demo-preview.jpg" width="720" alt="Watch the demo">
+  </a>
+  <br>
+  <em>Watch the full demo: deploy two agents, SSH in, view logs, all from the TUI.</em>
+</p>
 
 ---
 
