@@ -45,8 +45,32 @@ AI agents need persistent infrastructure, not ephemeral containers. They need to
 - **Cheap** -- Hetzner VMs start at $3.49/month. No markup, no platform fee.
 - **Yours** -- Apache 2.0. Fork it, extend it, run it on your own terms.
 
+## Prerequisites
+
+You need three things before getting started:
+
+**1. Hetzner Cloud account** -- [console.hetzner.cloud](https://console.hetzner.cloud). Create a project, then generate an API token with Read & Write permissions under Security > API Tokens.
+
+**2. Cloudflare account with a domain** -- [dash.cloudflare.com](https://dash.cloudflare.com). Get your Zone ID from the domain overview sidebar. Create an API token with Edit zone DNS permission.
+
+**3. SSH key on Hetzner** -- Upload your public key at Hetzner Console > Security > SSH Keys. If you need one: `ssh-keygen -t ed25519`.
+
+That's it. Once you have these, everything else is automated.
+
 ## Install
 
+**Homebrew** (recommended):
+```bash
+brew tap ghostwright/specter
+brew install specter
+```
+
+**Shell script:**
+```bash
+curl -sSL https://raw.githubusercontent.com/ghostwright/specter/main/scripts/install.sh | sh
+```
+
+**From source** (for development):
 ```bash
 git clone https://github.com/ghostwright/specter.git
 cd specter && make build
@@ -55,8 +79,22 @@ cd specter && make build
 
 ## Quick Start
 
+### Interactive (recommended)
+
+Just launch Specter. The TUI guides you through everything.
+
 ```bash
-# 1. Setup wizard (validates tokens, creates firewall)
+specter
+```
+
+First run detects no config and walks you through setup. Then press `d` to deploy your first agent, `s` to SSH in, `l` for logs. No flags to remember.
+
+### CLI
+
+If you prefer commands or need automation:
+
+```bash
+# 1. Setup (validates tokens, creates firewall)
 specter init
 
 # 2. Build golden snapshot (first time only, ~5 min)
@@ -257,16 +295,6 @@ The snapshot is built on the smallest x86 server (cx23, 40 GB disk) to minimize 
 - **systemd hardening** -- NoNewPrivileges, ProtectSystem=strict, ProtectHome=read-only, PrivateTmp, MemoryMax=2G, TasksMax=256
 - **Dual firewall** -- Hetzner Cloud Firewall + ufw, only ports 22/80/443
 - **SSH** -- Uses StrictHostKeyChecking=no (known trade-off for ephemeral VMs)
-
-## Prerequisites
-
-Before running `specter init`, you need:
-
-**1. Hetzner Cloud account** -- [console.hetzner.cloud](https://console.hetzner.cloud). Create a project, then generate an API token with Read & Write permissions under Security > API Tokens.
-
-**2. Cloudflare account with a domain** -- [dash.cloudflare.com](https://dash.cloudflare.com). Get your Zone ID from the domain overview sidebar. Create an API token with Edit zone DNS permission.
-
-**3. SSH key on Hetzner** -- Upload your public key at Hetzner Console > Security > SSH Keys. If you need one: `ssh-keygen -t ed25519`.
 
 ## FAQ
 
