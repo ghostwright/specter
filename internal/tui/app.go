@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	"github.com/ghostwright/specter/internal/cloudflare"
 	"github.com/ghostwright/specter/internal/config"
 	"github.com/ghostwright/specter/internal/hetzner"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
 
 // AppState tracks the top-level dashboard state.
@@ -21,6 +24,12 @@ const (
 	stateLoading AppState = iota
 	stateDashboard
 	stateHelp
+	stateDeployForm
+	stateDeployProgress
+	stateConfirmDestroy
+	stateDestroying
+	stateViewingLogs
+	stateUpdating
 )
 
 // PanelID identifies which panel has focus.
@@ -37,6 +46,7 @@ const (
 	minLeftWidth       = 25
 	titleBarRows       = 1
 	statusBarRows      = 1
+	flashDuration      = 3 * time.Second
 )
 
 // AppModel is the root Bubbletea model for the Specter dashboard.
@@ -57,6 +67,20 @@ type AppModel struct {
 	statusBar   StatusBarPanel
 	helpOverlay HelpOverlay
 
+	// Overlay models
+	deployForm     *DeployFormModel
+	deployProgress *DeployProgressModel
+	confirmDialog  *ConfirmDialogModel
+	logsViewport   *LogsViewportModel
+
+	// Flash status message
+	flashMsg  string
+	flashType string // "success", "error", "info"
+
+	// The running program reference (for deploy progress goroutine to send messages).
+	// Set via SetProgram before calling p.Run().
+	program *tea.Program
+
 	// Config
 	cfg *config.Config
 
@@ -71,8 +95,8 @@ type AppModel struct {
 var spinChars = []string{"\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"}
 
 // NewAppModel creates the dashboard model.
-func NewAppModel(cfg *config.Config) AppModel {
-	return AppModel{
+func NewAppModel(cfg *config.Config) *AppModel {
+	return &AppModel{
 		state:       stateLoading,
 		focusPanel:  panelAgentList,
 		loading:     true,
@@ -84,8 +108,13 @@ func NewAppModel(cfg *config.Config) AppModel {
 	}
 }
 
+// SetProgram sets the tea.Program reference (needed for deploy progress).
+func (m *AppModel) SetProgram(p *tea.Program) {
+	m.program = p
+}
+
 // Init starts loading agents and health polling.
-func (m AppModel) Init() tea.Cmd {
+func (m *AppModel) Init() tea.Cmd {
 	return tea.Batch(
 		loadAgentsCmd(m.cfg),
 		healthTickCmd(),
@@ -94,7 +123,13 @@ func (m AppModel) Init() tea.Cmd {
 }
 
 // Update handles all messages.
-func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// When in deploy form state, forward ALL messages to the form
+	// (huh needs cursor blink, focus, etc. not just key presses).
+	if m.state == stateDeployForm && m.deployForm != nil {
+		return m.updateDeployFormAll(msg)
+	}
+
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
@@ -110,15 +145,22 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// State-specific routing
+		// State-specific key routing
 		switch m.state {
 		case stateHelp:
 			return m.updateHelp(msg)
+		case stateConfirmDestroy:
+			return m.updateConfirmDestroy(msg)
+		case stateViewingLogs:
+			return m.updateLogs(msg)
+		case stateDeployProgress:
+			return m.updateDeployProgress(msg)
 		case stateDashboard:
 			return m.updateDashboard(msg)
 		}
 
-	// Data messages (state-independent)
+	// -- Data messages (state-independent) --
+
 	case AgentsLoadedMsg:
 		m.loading = false
 		if msg.Err != nil {
@@ -131,8 +173,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedIdx = max(0, len(m.agents)-1)
 			}
 		}
-		m.state = stateDashboard
-		// Immediately check health
+		if m.state == stateLoading {
+			m.state = stateDashboard
+		}
 		return m, checkAllHealthCmd(m.agents)
 
 	case HealthResultMsg:
@@ -159,7 +202,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinTickMsg:
 		m.spinnerIdx = (m.spinnerIdx + 1) % len(spinChars)
-		if m.loading {
+		// Also update deploy progress spinner
+		if m.deployProgress != nil {
+			m.deployProgress.HandleMsg(msg)
+		}
+		if m.loading || m.state == stateDeployProgress {
 			return m, spinTickCmd()
 		}
 		return m, nil
@@ -167,13 +214,137 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.loadErr = msg.Err
 		return m, nil
+
+	// -- Deploy form messages --
+
+	case DeployFormCompleteMsg:
+		m.deployForm = nil
+		location := m.cfg.Hetzner.DefaultLocation
+		envVars := msg.EnvVars
+		if envVars == nil {
+			envVars = make(map[string]string)
+		}
+
+		progress := NewDeployProgressModel(msg.Name, msg.Role, msg.ServerType, location)
+		progress.SetSize(m.width, m.height)
+		m.deployProgress = &progress
+		m.state = stateDeployProgress
+
+		return m, tea.Batch(
+			spinTickCmd(),
+			RunDeployCmd(m.program, m.cfg, msg.Name, msg.Role, msg.ServerType, location, envVars),
+		)
+
+	case DeployFormCancelMsg:
+		m.deployForm = nil
+		m.state = stateDashboard
+		return m, nil
+
+	// -- Deploy progress messages --
+
+	case TUIDeployPhaseMsg:
+		if m.deployProgress != nil {
+			m.deployProgress.HandleMsg(msg)
+		}
+		return m, nil
+
+	case TUIDeployCompleteMsg:
+		if m.deployProgress != nil {
+			m.deployProgress.HandleMsg(msg)
+		}
+		m.flashMsg = fmt.Sprintf("Agent %s deployed", msg.AgentName)
+		m.flashType = "success"
+		// Reload agents after a short delay to let the flash show
+		return m, tea.Batch(
+			loadAgentsCmd(m.cfg),
+			flashClearCmd(),
+		)
+
+	case TUIDeployErrorMsg:
+		if m.deployProgress != nil {
+			m.deployProgress.HandleMsg(msg)
+		}
+		m.flashMsg = fmt.Sprintf("Deploy failed: %v", msg.Err)
+		m.flashType = "error"
+		return m, flashClearCmd()
+
+	// -- Destroy messages --
+
+	case DestroyConfirmMsg:
+		m.confirmDialog = nil
+		m.state = stateDestroying
+		m.flashMsg = fmt.Sprintf("Destroying %s...", msg.AgentName)
+		m.flashType = "info"
+		return m, destroyAgentCmd(m.cfg, msg.AgentName)
+
+	case DestroyCancelMsg:
+		m.confirmDialog = nil
+		m.state = stateDashboard
+		return m, nil
+
+	case DestroyCompleteMsg:
+		m.state = stateDashboard
+		m.flashMsg = fmt.Sprintf("Agent %s destroyed", msg.AgentName)
+		m.flashType = "success"
+		return m, tea.Batch(
+			loadAgentsCmd(m.cfg),
+			flashClearCmd(),
+		)
+
+	case DestroyProgressMsg:
+		if msg.Err != nil {
+			m.state = stateDashboard
+			m.flashMsg = fmt.Sprintf("Destroy error: %v", msg.Err)
+			m.flashType = "error"
+			return m, flashClearCmd()
+		}
+		return m, nil
+
+	// -- SSH messages --
+
+	case SSHExitMsg:
+		// SSH session ended, return to dashboard
+		return m, nil
+
+	// -- Logs messages --
+
+	case LogsLoadedMsg:
+		if m.logsViewport != nil {
+			updated, cmd := m.logsViewport.Update(msg)
+			m.logsViewport = &updated
+			return m, cmd
+		}
+		return m, nil
+
+	// -- Update messages --
+
+	case UpdateCompleteMsg:
+		m.state = stateDashboard
+		if msg.Err != nil {
+			m.flashMsg = fmt.Sprintf("Update failed: %v", msg.Err)
+			m.flashType = "error"
+		} else {
+			m.flashMsg = fmt.Sprintf("Agent %s restarted", msg.AgentName)
+			m.flashType = "success"
+		}
+		return m, tea.Batch(
+			checkAllHealthCmd(m.agents),
+			flashClearCmd(),
+		)
+
+	// -- Flash clear --
+
+	case StatusFlashClearMsg:
+		m.flashMsg = ""
+		m.flashType = ""
+		return m, nil
 	}
 
 	return m, nil
 }
 
 // View renders the full dashboard.
-func (m AppModel) View() tea.View {
+func (m *AppModel) View() tea.View {
 	var content string
 
 	switch m.state {
@@ -181,6 +352,18 @@ func (m AppModel) View() tea.View {
 		content = m.loadingView()
 	case stateHelp:
 		content = m.helpOverlay.View()
+	case stateDeployForm:
+		if m.deployForm != nil {
+			content = m.deployForm.View()
+		}
+	case stateConfirmDestroy:
+		if m.confirmDialog != nil {
+			content = m.confirmDialog.View()
+		}
+	case stateDeployProgress:
+		content = m.deployProgressView()
+	case stateViewingLogs:
+		content = m.logsView()
 	default:
 		content = m.dashboardView()
 	}
@@ -192,7 +375,7 @@ func (m AppModel) View() tea.View {
 
 // -- State-specific update handlers --
 
-func (m AppModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m *AppModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "?":
 		m.state = stateHelp
@@ -230,12 +413,30 @@ func (m AppModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.selectedIdx = len(m.agents) - 1
 		}
 		return m, nil
+
+	case "d":
+		return m.startDeployForm()
+
+	case "x":
+		return m.startDestroyConfirm()
+
+	case "s", "enter":
+		return m.startSSH()
+
+	case "o":
+		return m.openURL()
+
+	case "l":
+		return m.startLogs()
+
+	case "u":
+		return m.startUpdate()
 	}
 
 	return m, nil
 }
 
-func (m AppModel) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m *AppModel) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "?", "escape", "esc", "q":
 		m.state = stateDashboard
@@ -244,9 +445,166 @@ func (m AppModel) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *AppModel) updateDeployFormAll(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle ctrl+c globally even in form state
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if keyMsg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+
+	// Handle window resize
+	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsMsg.Width
+		m.height = wsMsg.Height
+		m.recalcLayout()
+		return m, nil
+	}
+
+	updated, cmd := m.deployForm.Update(msg)
+	m.deployForm = &updated
+	return m, cmd
+}
+
+func (m *AppModel) updateConfirmDestroy(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.confirmDialog == nil {
+		m.state = stateDashboard
+		return m, nil
+	}
+	updated, cmd := m.confirmDialog.Update(msg)
+	m.confirmDialog = &updated
+	return m, cmd
+}
+
+func (m *AppModel) updateLogs(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "escape", "q":
+		m.logsViewport = nil
+		m.state = stateDashboard
+		return m, nil
+	}
+
+	if m.logsViewport != nil {
+		updated, cmd := m.logsViewport.Update(msg)
+		m.logsViewport = &updated
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *AppModel) updateDeployProgress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "escape":
+		if m.deployProgress != nil && m.deployProgress.done {
+			m.deployProgress = nil
+			m.state = stateDashboard
+			return m, nil
+		}
+	case "q":
+		if m.deployProgress != nil && m.deployProgress.done {
+			m.deployProgress = nil
+			m.state = stateDashboard
+			return m, nil
+		}
+	}
+	return m, nil
+}
+
+// -- Action starters --
+
+func (m *AppModel) startDeployForm() (tea.Model, tea.Cmd) {
+	if m.cfg.Snapshot.ID == 0 {
+		m.flashMsg = "No golden snapshot. Run `specter image build` first."
+		m.flashType = "error"
+		return m, flashClearCmd()
+	}
+
+	var existingNames []string
+	for _, a := range m.agents {
+		existingNames = append(existingNames, a.Name)
+	}
+
+	form := NewDeployFormModel(existingNames, m.cfg.Hetzner.DefaultServerType, m.cfg.Hetzner.DefaultLocation)
+	form.SetSize(m.width, m.height)
+	m.deployForm = &form
+	m.state = stateDeployForm
+
+	return m, m.deployForm.Init()
+}
+
+func (m *AppModel) startDestroyConfirm() (tea.Model, tea.Cmd) {
+	agent := m.getSelectedAgent()
+	if agent == nil {
+		return m, nil
+	}
+
+	dialog := NewDestroyConfirmDialog(agent.Name)
+	dialog.SetSize(m.width, m.height)
+	m.confirmDialog = &dialog
+	m.state = stateConfirmDestroy
+
+	return m, nil
+}
+
+func (m *AppModel) startSSH() (tea.Model, tea.Cmd) {
+	agent := m.getSelectedAgent()
+	if agent == nil {
+		return m, nil
+	}
+
+	sshCmd := exec.Command("ssh",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		fmt.Sprintf("root@%s", agent.IP))
+
+	return m, tea.ExecProcess(sshCmd, func(err error) tea.Msg {
+		return SSHExitMsg{Err: err}
+	})
+}
+
+func (m *AppModel) openURL() (tea.Model, tea.Cmd) {
+	agent := m.getSelectedAgent()
+	if agent == nil || agent.URL == "" {
+		return m, nil
+	}
+
+	// macOS: use open command
+	exec.Command("open", agent.URL).Start()
+	m.flashMsg = fmt.Sprintf("Opened %s", agent.URL)
+	m.flashType = "info"
+	return m, flashClearCmd()
+}
+
+func (m *AppModel) startLogs() (tea.Model, tea.Cmd) {
+	agent := m.getSelectedAgent()
+	if agent == nil {
+		return m, nil
+	}
+
+	viewport := NewLogsViewportModel(agent.Name, agent.IP)
+	viewport.SetSize(m.width, m.height)
+	m.logsViewport = &viewport
+	m.state = stateViewingLogs
+
+	return m, viewport.Init()
+}
+
+func (m *AppModel) startUpdate() (tea.Model, tea.Cmd) {
+	agent := m.getSelectedAgent()
+	if agent == nil {
+		return m, nil
+	}
+
+	m.flashMsg = fmt.Sprintf("Updating %s...", agent.Name)
+	m.flashType = "info"
+	m.state = stateUpdating
+
+	return m, updateAgentCmd(agent.Name, agent.IP)
+}
+
 // -- View rendering methods --
 
-func (m AppModel) loadingView() string {
+func (m *AppModel) loadingView() string {
 	spinner := lipgloss.NewStyle().Foreground(primaryColor).Render(spinChars[m.spinnerIdx])
 	text := lipgloss.NewStyle().Foreground(whiteColor).Render(" Loading agents...")
 
@@ -257,7 +615,81 @@ func (m AppModel) loadingView() string {
 	return content
 }
 
-func (m AppModel) dashboardView() string {
+func (m *AppModel) deployProgressView() string {
+	if m.width < 20 || m.height < 8 {
+		return "Terminal too small"
+	}
+
+	title := m.titleBar()
+	m.statusBar.SetWidth(m.width)
+	bar := m.statusBar.View(m.state, false, len(m.agents), m.totalCost())
+
+	var body string
+	if m.deployProgress != nil {
+		body = m.deployProgress.View()
+	} else {
+		body = "Deploying..."
+	}
+
+	boxWidth := m.width - 4
+	if boxWidth > 70 {
+		boxWidth = 70
+	}
+	box := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Width(boxWidth).
+		Render(body)
+
+	centered := lipgloss.Place(m.width, m.height-titleBarRows-statusBarRows,
+		lipgloss.Center, lipgloss.Center,
+		box,
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, centered, bar)
+}
+
+func (m *AppModel) logsView() string {
+	if m.width < 20 || m.height < 8 {
+		return "Terminal too small"
+	}
+
+	title := m.titleBar()
+	m.statusBar.SetWidth(m.width)
+	bar := m.statusBar.View(m.state, true, len(m.agents), m.totalCost())
+
+	var body string
+	if m.logsViewport != nil {
+		body = m.logsViewport.View()
+	}
+
+	boxWidth := m.width - 4
+	if boxWidth > 90 {
+		boxWidth = 90
+	}
+	boxHeight := m.height - titleBarRows - statusBarRows - 4
+	if boxHeight < 10 {
+		boxHeight = 10
+	}
+
+	box := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Width(boxWidth).
+		Height(boxHeight).
+		Render(body)
+
+	centered := lipgloss.Place(m.width, m.height-titleBarRows-statusBarRows,
+		lipgloss.Center, lipgloss.Center,
+		box,
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, title, centered, bar)
+}
+
+func (m *AppModel) dashboardView() string {
 	if m.width < 20 || m.height < 8 {
 		return "Terminal too small"
 	}
@@ -268,7 +700,7 @@ func (m AppModel) dashboardView() string {
 	// Title bar
 	title := m.titleBar()
 
-	// Banners (snapshot warning, errors)
+	// Banners (snapshot warning, errors, flash messages)
 	banners := m.bannerView()
 	bannerLines := 0
 	if banners != "" {
@@ -296,11 +728,11 @@ func (m AppModel) dashboardView() string {
 	// Apply borders to panels
 	var leftStyle, rightStyle lipgloss.Style
 	if m.focusPanel == panelAgentList {
-		leftStyle = panelBorderActive.Width(leftW - 2).Height(adjustedH - 2).Padding(0, 1)
-		rightStyle = panelBorderInactive.Width(rightW - 2).Height(adjustedH - 2).Padding(0, 1)
+		leftStyle = panelBorderActive.Width(leftW-2).Height(adjustedH-2).Padding(0, 1)
+		rightStyle = panelBorderInactive.Width(rightW-2).Height(adjustedH-2).Padding(0, 1)
 	} else {
-		leftStyle = panelBorderInactive.Width(leftW - 2).Height(adjustedH - 2).Padding(0, 1)
-		rightStyle = panelBorderActive.Width(rightW - 2).Height(adjustedH - 2).Padding(0, 1)
+		leftStyle = panelBorderInactive.Width(leftW-2).Height(adjustedH-2).Padding(0, 1)
+		rightStyle = panelBorderActive.Width(rightW-2).Height(adjustedH-2).Padding(0, 1)
 	}
 
 	leftPanel := leftStyle.Render(leftContent)
@@ -325,7 +757,7 @@ func (m AppModel) dashboardView() string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-func (m AppModel) titleBar() string {
+func (m *AppModel) titleBar() string {
 	left := titleBarStyle.Render("\u2b21 SPECTER")
 
 	// Right side: online count
@@ -357,8 +789,22 @@ func (m AppModel) titleBar() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m AppModel) bannerView() string {
+func (m *AppModel) bannerView() string {
 	var banners []string
+
+	// Flash message
+	if m.flashMsg != "" {
+		var style lipgloss.Style
+		switch m.flashType {
+		case "success":
+			style = flashSuccessStyle
+		case "error":
+			style = flashErrorStyle
+		default:
+			style = flashInfoStyle
+		}
+		banners = append(banners, "  "+style.Render(m.flashMsg))
+	}
 
 	if m.loadErr != nil {
 		banners = append(banners,
@@ -382,7 +828,7 @@ func (m AppModel) bannerView() string {
 
 // -- Layout helpers --
 
-func (m AppModel) panelSizes() (leftW, rightW, contentH int) {
+func (m *AppModel) panelSizes() (leftW, rightW, contentH int) {
 	leftW = max(minLeftWidth, m.width/3)
 	rightW = m.width - leftW
 	if rightW < 20 {
@@ -395,14 +841,14 @@ func (m AppModel) panelSizes() (leftW, rightW, contentH int) {
 	return
 }
 
-func (m AppModel) selectedAgent() *AgentViewModel {
+func (m *AppModel) getSelectedAgent() *AgentViewModel {
 	if len(m.agents) == 0 || m.selectedIdx >= len(m.agents) {
 		return nil
 	}
 	return &m.agents[m.selectedIdx]
 }
 
-func (m AppModel) totalCost() float64 {
+func (m *AppModel) totalCost() float64 {
 	var total float64
 	for _, a := range m.agents {
 		total += a.Cost
@@ -412,6 +858,18 @@ func (m AppModel) totalCost() float64 {
 
 func (m *AppModel) recalcLayout() {
 	m.helpOverlay.SetSize(m.width, m.height)
+	if m.deployForm != nil {
+		m.deployForm.SetSize(m.width, m.height)
+	}
+	if m.confirmDialog != nil {
+		m.confirmDialog.SetSize(m.width, m.height)
+	}
+	if m.deployProgress != nil {
+		m.deployProgress.SetSize(m.width, m.height)
+	}
+	if m.logsViewport != nil {
+		m.logsViewport.SetSize(m.width, m.height)
+	}
 }
 
 // -- Commands --
@@ -427,6 +885,12 @@ func spinTickCmd() tea.Cmd {
 func healthTickCmd() tea.Cmd {
 	return tea.Tick(healthPollInterval, func(t time.Time) tea.Msg {
 		return healthTickMsg(t)
+	})
+}
+
+func flashClearCmd() tea.Cmd {
+	return tea.Tick(flashDuration, func(t time.Time) tea.Msg {
+		return StatusFlashClearMsg{}
 	})
 }
 
@@ -541,6 +1005,68 @@ func checkOneHealthCmd(agent AgentViewModel) tea.Cmd {
 			msg.Version = v
 		}
 		return msg
+	}
+}
+
+// destroyAgentCmd runs the full destroy flow.
+func destroyAgentCmd(cfg *config.Config, agentName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		state, err := config.LoadState()
+		if err != nil {
+			return DestroyProgressMsg{Err: fmt.Errorf("could not load state: %w", err)}
+		}
+
+		agent, exists := state.GetAgent(agentName)
+		if !exists {
+			return DestroyProgressMsg{Err: fmt.Errorf("agent '%s' not found in state", agentName)}
+		}
+
+		hc := hetzner.NewClient(cfg.Hetzner.Token)
+		cf := cloudflare.NewClient(cfg.Cloudflare.Token, cfg.Cloudflare.ZoneID)
+
+		// Delete DNS record
+		if agent.DNSRecordID != "" {
+			if err := cf.DeleteDNSRecord(ctx, agent.DNSRecordID); err != nil {
+				if !cloudflare.IsNotFound(err) {
+					// Non-critical, continue
+				}
+			}
+		}
+
+		// Delete server
+		if err := hc.DeleteServer(ctx, &hcloud.Server{ID: agent.ServerID}); err != nil {
+			if !hetzner.IsNotFound(err) {
+				return DestroyProgressMsg{Err: fmt.Errorf("failed to delete server: %w", err)}
+			}
+		}
+
+		// Remove from state
+		state.RemoveAgent(agentName)
+		if err := state.Save(); err != nil {
+			return DestroyProgressMsg{Err: fmt.Errorf("could not save state: %w", err)}
+		}
+
+		return DestroyCompleteMsg{AgentName: agentName}
+	}
+}
+
+// updateAgentCmd restarts the agent service via SSH.
+func updateAgentCmd(agentName, ip string) tea.Cmd {
+	return func() tea.Msg {
+		client, err := hetzner.SSHConnect(ip)
+		if err != nil {
+			return UpdateCompleteMsg{AgentName: agentName, Err: fmt.Errorf("SSH connect failed: %w", err)}
+		}
+		defer client.Close()
+
+		_, err = hetzner.SSHRun(client, "systemctl restart specter-agent && sleep 2 && curl -sf http://localhost:3100/health > /dev/null 2>&1")
+		if err != nil {
+			return UpdateCompleteMsg{AgentName: agentName, Err: fmt.Errorf("restart failed: %w", err)}
+		}
+
+		return UpdateCompleteMsg{AgentName: agentName}
 	}
 }
 

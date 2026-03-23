@@ -73,3 +73,100 @@ type errMsg struct {
 type snapshotCheckMsg struct {
 	Exists bool
 }
+
+// -- Deploy flow messages --
+
+// DeployFormCompleteMsg signals that the deploy form was submitted.
+type DeployFormCompleteMsg struct {
+	Name       string
+	Role       string
+	ServerType string
+	Location   string
+	EnvVars    map[string]string
+}
+
+// DeployFormCancelMsg signals that the deploy form was cancelled.
+type DeployFormCancelMsg struct{}
+
+// TUIDeployPhaseMsg updates deploy progress in the dashboard.
+type TUIDeployPhaseMsg struct {
+	Phase   int
+	Name    string
+	Status  string // "active", "done", "error"
+	Elapsed time.Duration
+	Err     error
+}
+
+// TUIDeployCompleteMsg signals deploy finished.
+type TUIDeployCompleteMsg struct {
+	AgentName string
+	URL       string
+	IP        string
+	ServerID  int64
+	Elapsed   time.Duration
+}
+
+// TUIDeployErrorMsg signals deploy failed.
+type TUIDeployErrorMsg struct {
+	Err error
+}
+
+// -- Destroy flow messages --
+
+// DestroyConfirmMsg signals user confirmed destroy.
+type DestroyConfirmMsg struct {
+	AgentName string
+}
+
+// DestroyCancelMsg signals user cancelled destroy.
+type DestroyCancelMsg struct{}
+
+// DestroyProgressMsg updates destroy progress.
+type DestroyProgressMsg struct {
+	Step string
+	Done bool
+	Err  error
+}
+
+// DestroyCompleteMsg signals destroy finished.
+type DestroyCompleteMsg struct {
+	AgentName string
+}
+
+// -- SSH messages --
+
+// SSHExitMsg is sent when SSH session ends.
+type SSHExitMsg struct {
+	Err error
+}
+
+// -- Logs messages --
+
+// LogsLoadedMsg carries fetched log content.
+type LogsLoadedMsg struct {
+	Content string
+	Err     error
+}
+
+// -- Update messages --
+
+// UpdateStartMsg signals an update operation started.
+type UpdateStartMsg struct {
+	AgentName string
+}
+
+// UpdateCompleteMsg signals an update operation finished.
+type UpdateCompleteMsg struct {
+	AgentName string
+	Err       error
+}
+
+// -- Status flash --
+
+// StatusFlashMsg shows a temporary status message.
+type StatusFlashMsg struct {
+	Text string
+}
+
+// StatusFlashClearMsg clears the status flash.
+type StatusFlashClearMsg struct{}

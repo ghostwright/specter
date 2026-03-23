@@ -118,7 +118,42 @@ var (
 	// Separator
 	separatorStyle = lipgloss.NewStyle().
 			Foreground(mutedColor)
+
+	// Flash message
+	flashSuccessStyle = lipgloss.NewStyle().
+				Foreground(successColor).
+				Bold(true)
+
+	flashErrorStyle = lipgloss.NewStyle().
+			Foreground(errorColor).
+			Bold(true)
+
+	flashInfoStyle = lipgloss.NewStyle().
+			Foreground(accentColor)
 )
+
+// DashboardLogo returns the 5-line ghost logo using lipgloss v2 colors.
+func DashboardLogo() string {
+	body := lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
+	accent := lipgloss.NewStyle().Foreground(accentColor)
+	eyes := lipgloss.NewStyle().Foreground(whiteColor).Bold(true)
+	mouth := lipgloss.NewStyle().Foreground(deepColor)
+
+	return accent.Render("    .") + body.Render("oOOOo") + accent.Render(".") + "\n" +
+		body.Render("   /  ") + eyes.Render("\u25cf") + body.Render(" ") + eyes.Render("\u25cf") + body.Render("  \\") + "\n" +
+		body.Render("  |    ") + mouth.Render("\u25e1") + body.Render("    |") + "\n" +
+		body.Render("   \\ .___. /") + "\n" +
+		accent.Render("    'v~v~v'")
+}
+
+// DashboardLogoSmall returns a compact 2-line ghost for inline headers.
+func DashboardLogoSmall() string {
+	body := lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
+	eyes := lipgloss.NewStyle().Foreground(whiteColor).Bold(true)
+
+	return body.Render(" /") + eyes.Render("\u25cf\u25cf") + body.Render("\\") + "\n" +
+		body.Render(" '~~'")
+}
 
 // statusIcon returns the appropriate icon for an agent status.
 func statusIcon(s AgentStatus) string {

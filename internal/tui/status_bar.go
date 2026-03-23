@@ -36,6 +36,30 @@ func (p StatusBarPanel) View(state AppState, hasAgent bool, agentCount int, tota
 		hints = []keyHint{
 			{"?/esc", "close help"},
 		}
+	case stateDeployForm:
+		hints = []keyHint{
+			{"esc", "cancel"},
+			{"enter", "confirm"},
+		}
+	case stateDeployProgress:
+		hints = []keyHint{
+			{"esc/q", "dismiss (when done)"},
+		}
+	case stateConfirmDestroy:
+		hints = []keyHint{
+			{"y", "confirm"},
+			{"n/esc", "cancel"},
+		}
+	case stateViewingLogs:
+		hints = []keyHint{
+			{"j/k", "scroll"},
+			{"g/G", "top/bottom"},
+			{"esc/q", "close"},
+		}
+	case stateUpdating, stateDestroying:
+		hints = []keyHint{
+			{"", "working..."},
+		}
 	default:
 		if hasAgent {
 			hints = []keyHint{
@@ -43,6 +67,7 @@ func (p StatusBarPanel) View(state AppState, hasAgent bool, agentCount int, tota
 				{"s", "ssh"},
 				{"l", "logs"},
 				{"o", "open"},
+				{"u", "update"},
 				{"x", "destroy"},
 				{"r", "refresh"},
 				{"?", "help"},

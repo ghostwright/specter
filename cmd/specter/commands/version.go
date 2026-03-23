@@ -23,7 +23,7 @@ var versionCmd = &cobra.Command{
 			return
 		}
 		fmt.Println()
-		fmt.Println(tui.Logo())
+		fmt.Println(tui.DashboardLogo())
 		fmt.Println()
 		fmt.Printf("  %s v%s\n", tui.TitleStyle.Render(tui.Brand), version.Version)
 		fmt.Printf("  Commit: %s\n", version.Commit)
