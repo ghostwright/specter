@@ -281,7 +281,10 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DeployFormCompleteMsg:
 		m.deployForm = nil
-		location := m.cfg.Hetzner.DefaultLocation
+		location := msg.Location
+		if location == "" {
+			location = m.cfg.Hetzner.DefaultLocation
+		}
 		envVars := msg.EnvVars
 		if envVars == nil {
 			envVars = make(map[string]string)
@@ -541,7 +544,10 @@ func (m *AppModel) updateDeployFormAll(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.deployForm = nil
 		m.state = stateDeployProgress
 		complete := msg.(DeployFormCompleteMsg)
-		location := m.cfg.Hetzner.DefaultLocation
+		location := complete.Location
+		if location == "" {
+			location = m.cfg.Hetzner.DefaultLocation
+		}
 		envVars := complete.EnvVars
 		if envVars == nil {
 			envVars = make(map[string]string)

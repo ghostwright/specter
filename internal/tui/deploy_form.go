@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -9,6 +11,7 @@ import (
 	"charm.land/huh/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/ghostwright/specter/internal/config"
+	"github.com/ghostwright/specter/internal/templates"
 )
 
 var validAgentName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -40,11 +43,15 @@ func NewDeployFormModel(existingNames []string, defaultServerType, defaultLocati
 	// Build server type options from cache
 	serverTypeOpts := buildServerTypeOptions(defaultServerType)
 
+	// Build location options (x86 only - golden snapshot is x86)
+	locationOpts := buildLocationOptions(defaultLocation)
+
 	m := DeployFormModel{
 		existNames: nameSet,
 	}
 
 	m.form = huh.NewForm(
+		// Page 1: Name + Role
 		huh.NewGroup(
 			huh.NewInput().
 				Key("name").
@@ -72,13 +79,38 @@ func NewDeployFormModel(existingNames []string, defaultServerType, defaultLocati
 					huh.NewOption("data", "data"),
 					huh.NewOption("custom", "custom"),
 				),
-
+		),
+		// Page 2: Server Type + Location
+		huh.NewGroup(
 			huh.NewSelect[string]().
 				Key("server_type").
 				Title("Server Type").
 				Options(serverTypeOpts...),
+
+			huh.NewSelect[string]().
+				Key("location").
+				Title("Location").
+				Description("Hetzner datacenter region").
+				Options(locationOpts...),
 		),
+		// Page 3: Env vars + Confirm
 		huh.NewGroup(
+			huh.NewInput().
+				Key("env_file").
+				Title("Env File Path").
+				Description("Optional .env file to load").
+				Placeholder("./agent.env").
+				Validate(validateEnvFilePath),
+
+			huh.NewText().
+				Key("env_inline").
+				Title("Inline Env Vars").
+				Description("KEY=VALUE, one per line (overrides file)").
+				Placeholder("API_KEY=sk-...\nMODEL=claude-sonnet-4-20250514").
+				Lines(4).
+				CharLimit(2000).
+				ExternalEditor(false),
+
 			huh.NewConfirm().
 				Key("confirm").
 				Title("Deploy this agent?").
@@ -92,6 +124,110 @@ func NewDeployFormModel(existingNames []string, defaultServerType, defaultLocati
 		WithTheme(huh.ThemeFunc(specterFormTheme))
 
 	return m
+}
+
+// buildLocationOptions creates huh options for x86-compatible Hetzner locations.
+func buildLocationOptions(defaultLocation string) []huh.Option[string] {
+	if defaultLocation == "" {
+		defaultLocation = "nbg1"
+	}
+
+	type loc struct {
+		id   string
+		name string
+	}
+	locations := []loc{
+		{"nbg1", "Nuremberg, DE"},
+		{"fsn1", "Falkenstein, DE"},
+		{"hel1", "Helsinki, FI"},
+	}
+
+	var opts []huh.Option[string]
+	for _, l := range locations {
+		label := fmt.Sprintf("%s (%s)", l.id, l.name)
+		if l.id == defaultLocation {
+			label = "* " + label
+		} else {
+			label = "  " + label
+		}
+		opts = append(opts, huh.NewOption(label, l.id))
+	}
+	return opts
+}
+
+// validateEnvFilePath checks that a provided env file exists.
+// Empty input is valid (the field is optional).
+func validateEnvFilePath(s string) error {
+	if s == "" {
+		return nil
+	}
+	path := expandHomePath(s)
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %s", path)
+		}
+		return fmt.Errorf("cannot read file: %s", path)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("path is a directory, not a file")
+	}
+	return nil
+}
+
+// expandHomePath expands a leading ~/ to the user's home directory.
+func expandHomePath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// parseFormEnvVars combines env file and inline vars into a single map.
+// Inline vars override file vars (Docker-style precedence).
+func parseFormEnvVars(envFilePath, inlineVars string) (map[string]string, error) {
+	vars := make(map[string]string)
+
+	// Load from env file if provided
+	if envFilePath != "" {
+		path := expandHomePath(envFilePath)
+		fileVars, err := templates.ParseEnvFile(path)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range fileVars {
+			vars[k] = v
+		}
+	}
+
+	// Parse inline vars, overriding file values
+	if inlineVars != "" {
+		lines := strings.Split(inlineVars, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key != "" {
+				vars[key] = value
+			}
+		}
+	}
+
+	if len(vars) == 0 {
+		return nil, nil
+	}
+	return vars, nil
 }
 
 // buildServerTypeOptions creates huh options from the server type cache.
@@ -198,11 +334,18 @@ func (m DeployFormModel) Update(msg tea.Msg) (DeployFormModel, tea.Cmd) {
 			return m, func() tea.Msg { return DeployFormCancelMsg{} }
 		}
 		m.completed = true
+
+		envFilePath := m.form.GetString("env_file")
+		inlineVars := m.form.GetString("env_inline")
+		envVars, _ := parseFormEnvVars(envFilePath, inlineVars)
+
 		return m, func() tea.Msg {
 			return DeployFormCompleteMsg{
 				Name:       m.form.GetString("name"),
 				Role:       m.form.GetString("role"),
 				ServerType: m.form.GetString("server_type"),
+				Location:   m.form.GetString("location"),
+				EnvVars:    envVars,
 			}
 		}
 	}
