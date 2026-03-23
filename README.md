@@ -78,33 +78,24 @@ cd specter && make build
 
 ## Quick Start
 
-### Interactive (recommended)
-
-Just launch Specter. The TUI guides you through everything.
-
 ```bash
-specter
-```
-
-First run detects no config and walks you through setup. Then press `d` to deploy your first agent, `s` to SSH in, `l` for logs. No flags to remember.
-
-### CLI
-
-If you prefer commands or need automation:
-
-```bash
-# 1. Setup (validates tokens, creates firewall)
+# 1. Setup (validates tokens, creates firewall, caches server types)
 specter init
 
 # 2. Build golden snapshot (first time only, ~5 min)
 specter image build
 
-# 3. Deploy
-specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
+# 3. Launch the interactive dashboard
+specter
+```
 
-# 4. Verify
+The dashboard lets you deploy, SSH, view logs, and manage agents with keyboard shortcuts. Press `d` to deploy your first agent, `s` to SSH in, `l` for logs. No flags to remember.
+
+Or use the CLI directly for automation:
+
+```bash
+specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
 curl https://scout.yourdomain.com/health
-{"status":"ok","uptime":12,"version":"0.1.0"}
 ```
 
 ## Commands
