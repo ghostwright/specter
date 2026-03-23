@@ -6,8 +6,9 @@
 <p align="center"><em>AI agents that earn your trust.</em></p>
 
 <p align="center">
+  <a href="https://github.com/ghostwright/specter/actions/workflows/ci.yml"><img src="https://github.com/ghostwright/specter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="Apache 2.0 License"></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20(x86)-black.svg" alt="Linux x86">
+  <img src="https://img.shields.io/badge/platform-macOS%20%26%20Linux-black.svg" alt="macOS & Linux">
   <img src="https://img.shields.io/badge/go-1.26-orange.svg" alt="Go 1.26">
   <img src="https://img.shields.io/badge/JSON-mode-green.svg" alt="JSON Mode">
 </p>
@@ -200,7 +201,7 @@ Your Machine                      Hetzner Cloud
 | specter CLI      |              | VM (Ubuntu 24.04)            |
 |                  | ---SSH--->   |                              |
 | Go binary        |              |   Caddy (auto-TLS)           |
-| ~3,500 lines     | --HTTPS-->   |   reverse_proxy :3100        |
+| ~8,000 lines     | --HTTPS-->   |   reverse_proxy :3100        |
 |                  |              |   specter-agent (Bun)        |
 +------------------+              |     /health -> JSON          |
        |                          |   Docker (sidecars)          |

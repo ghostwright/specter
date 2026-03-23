@@ -5,7 +5,7 @@
 ## Does it modify any frozen files?
 
 <!-- Frozen files require 3 successful deploy tests before merging.
-     Frozen: systemd.go, deploy.go, image.go, cloudinit.go, hetzner/client.go, cloudflare/client.go -->
+     Frozen: systemd.go, cloudinit.go, caddyfile.go, image.go -->
 
 - [ ] No frozen files modified
 - [ ] Frozen files modified - 3 deploy test results attached below
