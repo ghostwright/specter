@@ -61,8 +61,7 @@ That's it. Once you have these, everything else is automated.
 
 **Homebrew** (recommended):
 ```bash
-brew tap ghostwright/specter
-brew install specter
+brew install ghostwright/specter/specter
 ```
 
 **Shell script:**
