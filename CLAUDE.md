@@ -43,7 +43,7 @@ internal/
     systemd.go                  systemd unit template          [FROZEN]
     caddyfile.go                Caddy reverse proxy template   [FROZEN]
   tui/
-    app.go                      Main Bubbletea model (~900 lines)
+    app.go                      Main Bubbletea model (~1,300 lines)
     agent_list.go               Dashboard list view
     agent_detail.go             Agent detail panel
     deploy_form.go              Deploy form (huh v2)

@@ -313,11 +313,11 @@ func runImageList(cmd *cobra.Command, args []string) error {
 
 	if jsonOutput {
 		type imgInfo struct {
-			ID          int64  `json:"id"`
-			Description string `json:"description"`
-			Version     string `json:"version"`
+			ID          int64   `json:"id"`
+			Description string  `json:"description"`
+			Version     string  `json:"version"`
 			DiskSize    float32 `json:"disk_size"`
-			Created     string `json:"created"`
+			Created     string  `json:"created"`
 		}
 		var infos []imgInfo
 		for _, img := range images {
