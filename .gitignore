@@ -2,5 +2,6 @@ bin/
 dist/
 *.exe
 .env*
+!.env.example
 .DS_Store
 *.log

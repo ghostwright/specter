@@ -6,8 +6,9 @@
 <p align="center"><em>AI agents that earn your trust.</em></p>
 
 <p align="center">
+  <a href="https://github.com/ghostwright/specter/actions/workflows/ci.yml"><img src="https://github.com/ghostwright/specter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="Apache 2.0 License"></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20(x86)-black.svg" alt="Linux x86">
+  <img src="https://img.shields.io/badge/platform-macOS%20%26%20Linux-black.svg" alt="macOS & Linux">
   <img src="https://img.shields.io/badge/go-1.26-orange.svg" alt="Go 1.26">
   <img src="https://img.shields.io/badge/JSON-mode-green.svg" alt="JSON Mode">
 </p>
@@ -23,7 +24,13 @@ specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
 
 One command. Dedicated VM on Hetzner Cloud, automatic DNS on Cloudflare, TLS via Let's Encrypt, systemd hardening, firewall, and a health endpoint. You own the infrastructure. You own the data. No vendor lock-in.
 
-<!-- <img src="demo.gif" width="720" alt="Specter deploy in action"> -->
+<p align="center">
+  <a href="https://www.loom.com/share/c0c94bfcaed748048411803ef7dd83e2">
+    <img src="demo-preview.jpg" width="720" alt="Watch the demo">
+  </a>
+  <br>
+  <em>Watch the full demo: deploy two agents, SSH in, view logs, all from the TUI.</em>
+</p>
 
 ---
 
@@ -38,8 +45,31 @@ AI agents need persistent infrastructure, not ephemeral containers. They need to
 - **Cheap** -- Hetzner VMs start at $3.49/month. No markup, no platform fee.
 - **Yours** -- Apache 2.0. Fork it, extend it, run it on your own terms.
 
+## Prerequisites
+
+You need three things before getting started:
+
+**1. Hetzner Cloud account** -- [console.hetzner.cloud](https://console.hetzner.cloud). Create a project, then generate an API token with Read & Write permissions under Security > API Tokens.
+
+**2. Cloudflare account with a domain** -- [dash.cloudflare.com](https://dash.cloudflare.com). Get your Zone ID from the domain overview sidebar. Create an API token with Edit zone DNS permission.
+
+**3. SSH key on Hetzner** -- Upload your public key at Hetzner Console > Security > SSH Keys. If you need one: `ssh-keygen -t ed25519`.
+
+That's it. Once you have these, everything else is automated.
+
 ## Install
 
+**Homebrew** (recommended):
+```bash
+brew install ghostwright/specter/specter
+```
+
+**Shell script:**
+```bash
+curl -sSL https://raw.githubusercontent.com/ghostwright/specter/main/scripts/install.sh | sh
+```
+
+**From source** (for development):
 ```bash
 git clone https://github.com/ghostwright/specter.git
 cd specter && make build
@@ -49,18 +79,23 @@ cd specter && make build
 ## Quick Start
 
 ```bash
-# 1. Setup wizard (validates tokens, creates firewall)
+# 1. Setup (validates tokens, creates firewall, caches server types)
 specter init
 
 # 2. Build golden snapshot (first time only, ~5 min)
 specter image build
 
-# 3. Deploy
-specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
+# 3. Launch the interactive dashboard
+specter
+```
 
-# 4. Verify
+The dashboard lets you deploy, SSH, view logs, and manage agents with keyboard shortcuts. Press `d` to deploy your first agent, `s` to SSH in, `l` for logs. No flags to remember.
+
+Or use the CLI directly for automation:
+
+```bash
+specter deploy scout --role swe --env ANTHROPIC_API_KEY=sk-ant-...
 curl https://scout.yourdomain.com/health
-{"status":"ok","uptime":12,"version":"0.1.0"}
 ```
 
 ## Commands
@@ -200,7 +235,7 @@ Your Machine                      Hetzner Cloud
 | specter CLI      |              | VM (Ubuntu 24.04)            |
 |                  | ---SSH--->   |                              |
 | Go binary        |              |   Caddy (auto-TLS)           |
-| ~3,500 lines     | --HTTPS-->   |   reverse_proxy :3100        |
+| ~8,000 lines     | --HTTPS-->   |   reverse_proxy :3100        |
 |                  |              |   specter-agent (Bun)        |
 +------------------+              |     /health -> JSON          |
        |                          |   Docker (sidecars)          |
@@ -250,16 +285,6 @@ The snapshot is built on the smallest x86 server (cx23, 40 GB disk) to minimize 
 - **systemd hardening** -- NoNewPrivileges, ProtectSystem=strict, ProtectHome=read-only, PrivateTmp, MemoryMax=2G, TasksMax=256
 - **Dual firewall** -- Hetzner Cloud Firewall + ufw, only ports 22/80/443
 - **SSH** -- Uses StrictHostKeyChecking=no (known trade-off for ephemeral VMs)
-
-## Prerequisites
-
-Before running `specter init`, you need:
-
-**1. Hetzner Cloud account** -- [console.hetzner.cloud](https://console.hetzner.cloud). Create a project, then generate an API token with Read & Write permissions under Security > API Tokens.
-
-**2. Cloudflare account with a domain** -- [dash.cloudflare.com](https://dash.cloudflare.com). Get your Zone ID from the domain overview sidebar. Create an API token with Edit zone DNS permission.
-
-**3. SSH key on Hetzner** -- Upload your public key at Hetzner Console > Security > SSH Keys. If you need one: `ssh-keygen -t ed25519`.
 
 ## FAQ
 

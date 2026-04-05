@@ -76,9 +76,9 @@ type DNSRecord struct {
 }
 
 type cfResponse struct {
-	Success bool        `json:"success"`
-	Result  DNSRecord   `json:"result"`
-	Errors  []cfError   `json:"errors"`
+	Success bool      `json:"success"`
+	Result  DNSRecord `json:"result"`
+	Errors  []cfError `json:"errors"`
 }
 
 type cfListResponse struct {
