@@ -286,7 +286,10 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 	var authMethods []ssh.AuthMethod
 	var diagErrors []string
 
-	// Try SSH agent first (handles passphrase-protected keys)
+	// Try SSH agent first (handles passphrase-protected keys).
+	// The agent connection must stay open through ssh.Dial because
+	// PublicKeysCallback calls Signers() lazily during the handshake.
+	var agentConn net.Conn
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		conn, err := net.Dial("unix", sock)
 		if err != nil {
@@ -300,8 +303,8 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 			} else if len(signers) == 0 {
 				conn.Close()
 			} else {
+				agentConn = conn
 				authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
-				conn.Close()
 			}
 		}
 	}
@@ -346,6 +349,9 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 	}
 
 	client, err := ssh.Dial("tcp", ip+":22", config)
+	if agentConn != nil {
+		agentConn.Close()
+	}
 	if err != nil {
 		return nil, err
 	}
