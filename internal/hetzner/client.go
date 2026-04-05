@@ -287,15 +287,22 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 	var diagErrors []string
 
 	// Try SSH agent first (handles passphrase-protected keys)
-	var agentConn net.Conn
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		conn, err := net.Dial("unix", sock)
 		if err != nil {
 			diagErrors = append(diagErrors, fmt.Sprintf("SSH agent dial failed: %v", err))
 		} else {
-			agentConn = conn
 			agentClient := agent.NewClient(conn)
-			authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
+			signers, err := agentClient.Signers()
+			if err != nil {
+				diagErrors = append(diagErrors, fmt.Sprintf("SSH agent signers failed: %v", err))
+				conn.Close()
+			} else if len(signers) == 0 {
+				conn.Close()
+			} else {
+				authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
+				conn.Close()
+			}
 		}
 	}
 
@@ -314,7 +321,7 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 			if err != nil {
 				var passErr *ssh.PassphraseMissingError
 				if errors.As(err, &passErr) {
-					continue // passphrase-protected, skip — agent handles these
+					continue // passphrase-protected, skip - agent handles these
 				}
 				diagErrors = append(diagErrors, fmt.Sprintf("failed to parse %s: %v", keyPath, err))
 				continue
@@ -340,9 +347,6 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 
 	client, err := ssh.Dial("tcp", ip+":22", config)
 	if err != nil {
-		if agentConn != nil {
-			agentConn.Close()
-		}
 		return nil, err
 	}
 	return client, nil
