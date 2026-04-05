@@ -286,16 +286,26 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 	var authMethods []ssh.AuthMethod
 	var diagErrors []string
 
-	// Try SSH agent first (handles passphrase-protected keys)
+	// Try SSH agent first (handles passphrase-protected keys).
+	// The agent connection must stay open through ssh.Dial because
+	// PublicKeysCallback calls Signers() lazily during the handshake.
 	var agentConn net.Conn
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
 		conn, err := net.Dial("unix", sock)
 		if err != nil {
 			diagErrors = append(diagErrors, fmt.Sprintf("SSH agent dial failed: %v", err))
 		} else {
-			agentConn = conn
 			agentClient := agent.NewClient(conn)
-			authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
+			signers, err := agentClient.Signers()
+			if err != nil {
+				diagErrors = append(diagErrors, fmt.Sprintf("SSH agent signers failed: %v", err))
+				conn.Close()
+			} else if len(signers) == 0 {
+				conn.Close()
+			} else {
+				agentConn = conn
+				authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
+			}
 		}
 	}
 
@@ -314,7 +324,7 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 			if err != nil {
 				var passErr *ssh.PassphraseMissingError
 				if errors.As(err, &passErr) {
-					continue // passphrase-protected, skip — agent handles these
+					continue // passphrase-protected, skip - agent handles these
 				}
 				diagErrors = append(diagErrors, fmt.Sprintf("failed to parse %s: %v", keyPath, err))
 				continue
@@ -339,10 +349,10 @@ func SSHConnect(ip string) (*ssh.Client, error) {
 	}
 
 	client, err := ssh.Dial("tcp", ip+":22", config)
+	if agentConn != nil {
+		agentConn.Close()
+	}
 	if err != nil {
-		if agentConn != nil {
-			agentConn.Close()
-		}
 		return nil, err
 	}
 	return client, nil
