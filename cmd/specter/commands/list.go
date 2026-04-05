@@ -16,10 +16,10 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "Show all deployed agents",
+	Use:     "list",
+	Short:   "Show all deployed agents",
 	Aliases: []string{"ls"},
-	RunE:  runList,
+	RunE:    runList,
 }
 
 type agentInfo struct {

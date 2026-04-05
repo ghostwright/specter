@@ -2,16 +2,19 @@ package hetzner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ghostwright/specter/internal/config"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 type Client struct {
@@ -280,32 +283,75 @@ func (c *Client) ListServerTypes(ctx context.Context) ([]config.ServerTypeInfo, 
 }
 
 func SSHConnect(ip string) (*ssh.Client, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("could not find home directory: %w", err)
-	}
+	var authMethods []ssh.AuthMethod
+	var diagErrors []string
 
-	keyBytes, err := os.ReadFile(filepath.Join(home, ".ssh", "id_ed25519"))
-	if err != nil {
-		keyBytes, err = os.ReadFile(filepath.Join(home, ".ssh", "id_rsa"))
+	// Try SSH agent first (handles passphrase-protected keys).
+	// The agent connection must stay open through ssh.Dial because
+	// PublicKeysCallback calls Signers() lazily during the handshake.
+	var agentConn net.Conn
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		conn, err := net.Dial("unix", sock)
 		if err != nil {
-			return nil, fmt.Errorf("no SSH key found at ~/.ssh/id_ed25519 or ~/.ssh/id_rsa")
+			diagErrors = append(diagErrors, fmt.Sprintf("SSH agent dial failed: %v", err))
+		} else {
+			agentClient := agent.NewClient(conn)
+			signers, err := agentClient.Signers()
+			if err != nil {
+				diagErrors = append(diagErrors, fmt.Sprintf("SSH agent signers failed: %v", err))
+				conn.Close()
+			} else if len(signers) == 0 {
+				conn.Close()
+			} else {
+				agentConn = conn
+				authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
+			}
 		}
 	}
 
-	signer, err := ssh.ParsePrivateKey(keyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing SSH key: %w", err)
+	// Fall back to raw key files for unprotected keys
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		diagErrors = append(diagErrors, fmt.Sprintf("could not find home directory: %v", homeErr))
+	} else {
+		for _, name := range []string{"id_ed25519", "id_rsa"} {
+			keyPath := filepath.Join(home, ".ssh", name)
+			keyBytes, err := os.ReadFile(keyPath)
+			if err != nil {
+				continue
+			}
+			signer, err := ssh.ParsePrivateKey(keyBytes)
+			if err != nil {
+				var passErr *ssh.PassphraseMissingError
+				if errors.As(err, &passErr) {
+					continue // passphrase-protected, skip - agent handles these
+				}
+				diagErrors = append(diagErrors, fmt.Sprintf("failed to parse %s: %v", keyPath, err))
+				continue
+			}
+			authMethods = append(authMethods, ssh.PublicKeys(signer))
+		}
+	}
+
+	if len(authMethods) == 0 {
+		msg := "no SSH auth available: set SSH_AUTH_SOCK or provide an unprotected key at ~/.ssh/id_ed25519 or ~/.ssh/id_rsa"
+		if len(diagErrors) > 0 {
+			msg += "\ndetails:\n  " + strings.Join(diagErrors, "\n  ")
+		}
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	config := &ssh.ClientConfig{
 		User:            "root",
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
 
 	client, err := ssh.Dial("tcp", ip+":22", config)
+	if agentConn != nil {
+		agentConn.Close()
+	}
 	if err != nil {
 		return nil, err
 	}

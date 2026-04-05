@@ -25,7 +25,7 @@ type ServerTypeInfo struct {
 
 type ServerTypeCache struct {
 	Types     []ServerTypeInfo `json:"types"`
-	FetchedAt time.Time       `json:"fetched_at"`
+	FetchedAt time.Time        `json:"fetched_at"`
 }
 
 func ServerTypeCachePath() (string, error) {

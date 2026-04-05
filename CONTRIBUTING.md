@@ -95,7 +95,7 @@ These files are frozen. Do not modify them without running 3 full deploy cycles 
 | `internal/templates/caddyfile.go` | Caddy handles TLS via ACME. Changing the template can trigger Let's Encrypt rate limits (10 registrations per IP per 3 hours). |
 | `cmd/specter/commands/image.go` | The image build provisioning script must call `sync` before snapshotting. Without it, Bun's 99MB binary was captured as 0 bytes. This was the Phase 3 blocker. |
 
-The 16/16 deploy success rate was hard-won. Every one of these files has a bug story behind it.
+The deploy success rate was hard-won. Every one of these files has a bug story behind it.
 
 ## How to Add a TUI View
 
