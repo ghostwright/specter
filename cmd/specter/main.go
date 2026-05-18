@@ -15,7 +15,7 @@ func main() {
 		runDashboard()
 	} else {
 		if err := commands.Execute(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			commands.WriteError(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
