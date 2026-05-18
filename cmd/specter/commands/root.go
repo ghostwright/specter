@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/ghostwright/specter/internal/tui"
 	"github.com/ghostwright/specter/pkg/version"
@@ -41,4 +43,15 @@ func init() {
 
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+func WriteError(w io.Writer, err error) {
+	if jsonOutput {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	fmt.Fprintln(w, err)
 }
